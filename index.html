@@ -2,197 +2,128 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>Decorous | Construction & Interior Design Company in Bhubaneswar</title>
+  <title>Decorous | Premium Construction & Interior Design in Bhubaneswar</title>
+  <meta name="description" content="Decorous offers premium house construction, interior design, civil construction, and renovation services in Bhubaneswar, Odisha. Quality, transparency, and timely delivery.">
 
-  <meta name="description" content="Decorous is a trusted construction and interior design company in Bhubaneswar providing house construction, interior design, civil construction and renovation services." />
-
-  <link rel="canonical" href="https://decorous.in/" />
-
-  <!-- Local Business Schema -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "ConstructionCompany",
-    "name": "Decorous",
-    "url": "https://decorous.in",
-    "telephone": "+91-7008863329",
-    "address": {
-      "@type": "PostalAddress",
-      "addressLocality": "Bhubaneswar",
-      "addressRegion": "Odisha",
-      "addressCountry": "IN"
-    }
-  }
-  </script>
+  <link rel="canonical" href="https://decorous.in/">
 
   <style>
     /* ===== RESET ===== */
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Arial, sans-serif;
-      background: #f9fafb;
-      color: #111827;
-      line-height: 1.6;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Poppins', Arial, sans-serif; background: #F5F5F5; color: #111827; }
+
     a { text-decoration: none; color: inherit; }
 
-    /* ===== HEADER / NAV ===== */
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 9999;
-      background: #ffffff;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    /* ===== COLORS ===== */
+    :root {
+      --deep-navy: #0F1A2F;
+      --charcoal: #2A2F3A;
+      --gold: #C8A165;
+      --white: #FFFFFF;
+      --gray-bg: #F5F5F5;
+      --text-dark: #111827;
+      --soft-gray: #6B7280;
     }
 
-    .nav-container {
-      max-width: 1200px;
-      margin: auto;
+    /* ===== HEADER ===== */
+    header {
+      background: var(--white);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
       padding: 16px 20px;
+    }
+    .nav-container {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      position: relative;
+      max-width: 1200px;
+      margin: auto;
     }
-
-    .logo {
-      font-size: 20px;
-      font-weight: 700;
-    }
-
-    .nav-links {
-      display: flex;
-      gap: 20px;
-    }
-
-    .nav-links a {
-      font-weight: 500;
-    }
-
-    .hamburger {
-      display: none;
-      font-size: 26px;
-      cursor: pointer;
-    }
-
-    /* ===== MOBILE NAV ===== */
-    @media (max-width: 768px) {
-      .hamburger {
-        display: block;
-      }
-
-      .nav-links {
-        display: none;
-        position: absolute;
-        top: 100%;
-        left: 0;
-        width: 100%;
-        background: #ffffff;
-        flex-direction: column;
-        border-top: 1px solid #e5e7eb;
-      }
-
-      .nav-links a {
-        padding: 16px;
-        border-bottom: 1px solid #e5e7eb;
-      }
-
-      .nav-links.show {
-        display: flex;
-      }
-    }
+    .logo { font-size: 24px; font-weight: bold; color: var(--deep-navy); }
+    .nav-links { display: flex; gap: 24px; list-style: none; }
+    .nav-links a { font-weight: 500; color: var(--text-dark); }
+    .cta-header { background: var(--gold); padding: 8px 18px; border-radius: 6px; font-weight: 600; color: var(--white); }
 
     /* ===== HERO ===== */
     .hero {
-      background: linear-gradient(135deg,#111827,#1f2937);
-      color: #ffffff;
+      background-image: url('assets/hero-bg.jpg');
+      background-size: cover;
+      background-position: center;
+      padding: 140px 20px;
       text-align: center;
-      padding: 90px 20px;
+      color: var(--white);
     }
-
     .hero h1 {
-      font-size: 36px;
+      font-size: 48px;
+      font-weight: 700;
       margin-bottom: 16px;
     }
-
-    .hero p {
-      max-width: 800px;
-      margin: auto;
-      color: #d1d5db;
-    }
-
-    .cta {
-      margin-top: 24px;
-    }
-
-    .btn {
-      display: inline-block;
-      margin: 8px;
-      padding: 14px 28px;
-      border-radius: 6px;
-      font-weight: 600;
-    }
-
-    .btn-primary {
-      background: #2563eb;
-      color: #ffffff;
-    }
-
-    .btn-outline {
-      border: 2px solid #ffffff;
-      color: #ffffff;
-    }
+    .hero p { font-size: 20px; margin-bottom: 32px; color: #E5E7EB; }
+    .hero .btn { padding: 14px 28px; border-radius: 8px; font-weight: 600; margin: 6px; }
+    .btn-primary { background: var(--gold); color: var(--white); }
+    .btn-outline { border: 2px solid var(--gold); color: var(--white); }
 
     /* ===== SECTIONS ===== */
-    section {
-      padding: 70px 20px;
-    }
-
-    .container {
-      max-width: 1100px;
-      margin: auto;
-    }
-
-    h2 {
-      text-align: center;
-      margin-bottom: 40px;
-    }
+    section { padding: 80px 20px; }
+    .container { max-width: 1100px; margin: auto; }
 
     /* ===== SERVICES ===== */
-    .services {
+    .services-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit,minmax(240px,1fr));
+      grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
       gap: 24px;
     }
-
     .service-card {
-      background: #ffffff;
-      padding: 28px;
+      background: var(--white);
+      padding: 24px;
       border-radius: 12px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      text-align: center;
+      transition: transform 0.3s ease;
     }
+    .service-card:hover { transform: translateY(-6px); }
+    .service-card h3 { margin-bottom: 12px; font-weight: 600; color: var(--deep-navy); }
+    .service-card p { color: var(--soft-gray); }
+
+    /* ===== PROJECT GALLERY ===== */
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(200px,1fr));
+      gap: 18px;
+    }
+    .gallery img { width: 100%; border-radius: 12px; object-fit: cover; }
+
+    /* ===== TESTIMONIALS ===== */
+    .testimonials { display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 20px; }
+    .testimonial-card {
+      background: var(--white);
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .testimonial-card p { font-style: italic; color: var(--charcoal); margin-bottom: 8px; }
 
     /* ===== CONTACT ===== */
     .contact-box {
-      background: #ffffff;
-      padding: 40px;
+      background: var(--white);
+      padding: 36px;
       border-radius: 12px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
       text-align: center;
     }
 
     /* ===== FOOTER ===== */
     footer {
-      background: #111827;
-      color: #e5e7eb;
+      background: var(--deep-navy);
+      color: var(--white);
       text-align: center;
-      padding: 40px 20px;
-    }
-
-    footer p {
-      margin: 6px 0;
+      padding: 24px 20px;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -204,28 +135,25 @@
     <div class="nav-container">
       <div class="logo">Decorous</div>
 
-      <div class="hamburger" onclick="toggleMenu()">☰</div>
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/house-construction-bhubaneswar.html">Construction</a></li>
+        <li><a href="/interior-design-bhubaneswar.html">Interior</a></li>
+        <li><a href="/civil-construction-bhubaneswar.html">Civil</a></li>
+        <li><a href="/home-renovation-bhubaneswar.html">Renovation</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
 
-      <nav class="nav-links" id="navLinks">
-        <a href="/">Home</a>
-        <a href="/house-construction-bhubaneswar.html">Construction</a>
-        <a href="/interior-design-bhubaneswar.html">Interior</a>
-        <a href="/civil-construction-bhubaneswar.html">Civil</a>
-        <a href="/home-renovation-bhubaneswar.html">Renovation</a>
-        <a href="tel:7008863329">Call</a>
-      </nav>
+      <a href="tel:7008863329" class="cta-header">Call 7008863329</a>
     </div>
   </header>
 
   <!-- HERO -->
   <section class="hero">
-    <h1>Construction & Interior Design Company in Bhubaneswar</h1>
-    <p>
-      Decorous delivers high-quality house construction, interior design,
-      civil construction and renovation services across Bhubaneswar, Odisha.
-    </p>
+    <div class="container">
+      <h1>Premium Construction & Interior Design in Bhubaneswar</h1>
+      <p>Delivering world-class homes with quality, transparency & timely delivery.</p>
 
-    <div class="cta">
       <a href="tel:7008863329" class="btn btn-primary">Call Now</a>
       <a href="https://wa.me/917008863329" class="btn btn-outline">WhatsApp</a>
     </div>
@@ -234,34 +162,63 @@
   <!-- SERVICES -->
   <section>
     <div class="container">
-      <h2>Our Services</h2>
+      <h2>Our Expertise</h2>
 
-      <div class="services">
+      <div class="services-grid">
         <div class="service-card">
           <h3>House Construction</h3>
-          <p>Residential and turnkey house construction services.</p>
+          <p>Residential, turnkey and foundation-to-finish construction.</p>
         </div>
 
         <div class="service-card">
           <h3>Interior Design</h3>
-          <p>Modern, functional interior design solutions.</p>
+          <p>Elegant and functional interior solutions tailored for you.</p>
         </div>
 
         <div class="service-card">
           <h3>Civil Construction</h3>
-          <p>RCC, brickwork and structural construction services.</p>
+          <p>RCC, structural work and site supervision excellence.</p>
         </div>
 
         <div class="service-card">
-          <h3>Renovation</h3>
-          <p>Home renovation and remodeling with quality finish.</p>
+          <h3>Renovation & Remodeling</h3>
+          <p>Home upgrades and space transformation services.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROJECTS -->
+  <section>
+    <div class="container">
+      <h2>Our Projects</h2>
+      <div class="gallery">
+        <img src="assets/gallery/project1.jpg" alt="Project 1">
+        <img src="assets/gallery/project2.jpg" alt="Project 2">
+        <img src="assets/gallery/project3.jpg" alt="Project 3">
+      </div>
+    </div>
+  </section>
+
+  <!-- TESTIMONIALS -->
+  <section>
+    <div class="container">
+      <h2>What Our Clients Say</h2>
+      <div class="testimonials">
+        <div class="testimonial-card">
+          <p>"Decorous transformed our home beautifully!"</p>
+          <strong>— Mr. Sharma</strong>
+        </div>
+        <div class="testimonial-card">
+          <p>"Excellent quality & timely delivery."</p>
+          <strong>— Mrs. Das</strong>
         </div>
       </div>
     </div>
   </section>
 
   <!-- CONTACT -->
-  <section>
+  <section id="contact">
     <div class="container">
       <div class="contact-box">
         <h2>Contact Us</h2>
@@ -274,17 +231,9 @@
 
   <!-- FOOTER -->
   <footer>
-    <p><strong>Decorous</strong></p>
-    <p>Construction & Interior Design Company in Bhubaneswar</p>
-    <p>📞 7008863329</p>
+    <p>© 2026 Decorous. All Rights Reserved.</p>
+    <p>Built for modern luxury & quality.</p>
   </footer>
-
-  <!-- SCRIPT -->
-  <script>
-    function toggleMenu() {
-      document.getElementById("navLinks").classList.toggle("show");
-    }
-  </script>
 
 </body>
 </html>
