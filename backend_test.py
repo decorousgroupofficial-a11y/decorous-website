@@ -168,11 +168,204 @@ class DecorousAPITester:
         success, result = self.run_test("Create Lead", "POST", "leads", 200, data=test_lead)
         if success and result:
             print(f"   Created lead with ID: {result.get('id')}")
+            self.test_lead_id = result.get('id')  # Store for admin tests
         
         # Test get leads
         self.run_test("Get Leads", "GET", "leads", 200)
         
         return success
+
+    def run_admin_test(self, name, method, endpoint, expected_status, data=None, params=None):
+        """Run admin API test with authentication"""
+        url = f"{self.base_url}/{endpoint}"
+        headers = {'Content-Type': 'application/json'}
+        auth = ('admin', 'Decorous@2024')  # Admin credentials
+
+        self.tests_run += 1
+        print(f"\n🔍 Testing {name}...")
+        print(f"   URL: {url}")
+        
+        try:
+            if method == 'GET':
+                response = requests.get(url, headers=headers, auth=auth, params=params)
+            elif method == 'POST':
+                response = requests.post(url, json=data, headers=headers, auth=auth)
+            elif method == 'PATCH':
+                response = requests.patch(url, json=data, headers=headers, auth=auth)
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=headers, auth=auth)
+
+            success = response.status_code == expected_status
+            if success:
+                self.tests_passed += 1
+                print(f"✅ Passed - Status: {response.status_code}")
+                try:
+                    json_data = response.json()
+                    if isinstance(json_data, list):
+                        print(f"   Response: List with {len(json_data)} items")
+                    elif isinstance(json_data, dict):
+                        print(f"   Response keys: {list(json_data.keys())}")
+                except:
+                    print(f"   Response: Non-JSON content")
+            else:
+                self.failed_tests.append({
+                    'test': name,
+                    'expected': expected_status,
+                    'actual': response.status_code,
+                    'endpoint': endpoint
+                })
+                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
+                try:
+                    print(f"   Error response: {response.text}")
+                except:
+                    print("   Could not decode error response")
+
+            return success, response.json() if success and response.content else {}
+
+        except Exception as e:
+            self.failed_tests.append({
+                'test': name,
+                'expected': expected_status,
+                'actual': f'Exception: {str(e)}',
+                'endpoint': endpoint
+            })
+            print(f"❌ Failed - Error: {str(e)}")
+            return False, {}
+
+    def test_admin_authentication(self):
+        """Test admin authentication and unauthorized access"""
+        # Test with correct credentials
+        success, result = self.run_admin_test("Admin Login (Valid)", "GET", "admin/leads", 200)
+        
+        # Test with wrong credentials
+        url = f"{self.base_url}/admin/leads"
+        headers = {'Content-Type': 'application/json'}
+        auth = ('admin', 'wrongpassword')
+        
+        self.tests_run += 1
+        print(f"\n🔍 Testing Admin Login (Invalid Credentials)...")
+        try:
+            response = requests.get(url, headers=headers, auth=auth)
+            if response.status_code == 401:
+                self.tests_passed += 1
+                print(f"✅ Passed - Status: {response.status_code} (Unauthorized as expected)")
+            else:
+                print(f"❌ Failed - Expected 401, got {response.status_code}")
+                self.failed_tests.append({
+                    'test': 'Admin Login (Invalid Credentials)',
+                    'expected': 401,
+                    'actual': response.status_code,
+                    'endpoint': 'admin/leads'
+                })
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+            self.failed_tests.append({
+                'test': 'Admin Login (Invalid Credentials)',
+                'expected': 401,
+                'actual': f'Exception: {str(e)}',
+                'endpoint': 'admin/leads'
+            })
+        
+        return success
+
+    def test_admin_lead_management(self):
+        """Test admin lead management operations"""
+        # Get admin leads with stats
+        success, result = self.run_admin_test("Get Admin Leads with Stats", "GET", "admin/leads", 200)
+        if success and result:
+            leads = result.get('leads', [])
+            stats = result.get('stats', {})
+            print(f"   Found {len(leads)} leads")
+            print(f"   Stats: Total: {stats.get('total', 0)}, New: {stats.get('new', 0)}, Contacted: {stats.get('contacted', 0)}")
+            
+            # If we have leads, test update and delete operations
+            if leads and hasattr(self, 'test_lead_id'):
+                # Test update lead status
+                update_data = {"status": "contacted"}
+                self.run_admin_test("Update Lead Status", "PATCH", f"admin/leads/{self.test_lead_id}", 200, data=update_data)
+                
+                # Test delete lead (use the test lead we created)
+                self.run_admin_test("Delete Lead", "DELETE", f"admin/leads/{self.test_lead_id}", 200)
+        
+        return success
+
+    def test_schema_markup_apis(self):
+        """Test schema markup APIs for SEO"""
+        # Test organization schema
+        success1, org_schema = self.run_test("Organization Schema API", "GET", "schema/organization", 200)
+        if success1 and org_schema:
+            required_fields = ["@context", "@type", "name", "description", "url"]
+            missing_fields = [field for field in required_fields if field not in org_schema]
+            if not missing_fields:
+                print(f"   ✅ Organization schema has all required fields")
+            else:
+                print(f"   ⚠️ Missing fields: {missing_fields}")
+
+        # Test local business schema
+        success2, business_schema = self.run_test("Local Business Schema API", "GET", "schema/local-business", 200)
+        if success2 and business_schema:
+            required_fields = ["@context", "@type", "name", "address", "telephone"]
+            missing_fields = [field for field in required_fields if field not in business_schema]
+            if not missing_fields:
+                print(f"   ✅ Local Business schema has all required fields")
+            else:
+                print(f"   ⚠️ Missing fields: {missing_fields}")
+
+        return success1 and success2
+
+    def test_sitemap_xml(self):
+        """Test XML sitemap generation"""
+        url = f"{self.base_url}/sitemap.xml"
+        
+        self.tests_run += 1
+        print(f"\n🔍 Testing XML Sitemap...")
+        print(f"   URL: {url}")
+        
+        try:
+            response = requests.get(url)
+            
+            success = response.status_code == 200
+            if success:
+                self.tests_passed += 1
+                print(f"✅ Passed - Status: {response.status_code}")
+                
+                # Check if it's valid XML content
+                content = response.text
+                if '<?xml version="1.0"' in content and '<urlset' in content:
+                    print(f"   ✅ Valid XML sitemap format detected")
+                    # Count URLs
+                    url_count = content.count('<url>')
+                    print(f"   Found {url_count} URLs in sitemap")
+                else:
+                    print(f"   ⚠️ Response may not be valid XML sitemap format")
+                
+                # Check Content-Type
+                content_type = response.headers.get('content-type', '')
+                if 'xml' in content_type:
+                    print(f"   ✅ Correct Content-Type: {content_type}")
+                else:
+                    print(f"   ⚠️ Unexpected Content-Type: {content_type}")
+                    
+            else:
+                self.failed_tests.append({
+                    'test': 'XML Sitemap',
+                    'expected': 200,
+                    'actual': response.status_code,
+                    'endpoint': 'sitemap.xml'
+                })
+                print(f"❌ Failed - Expected 200, got {response.status_code}")
+
+            return success
+
+        except Exception as e:
+            self.failed_tests.append({
+                'test': 'XML Sitemap',
+                'expected': 200,
+                'actual': f'Exception: {str(e)}',
+                'endpoint': 'sitemap.xml'
+            })
+            print(f"❌ Failed - Error: {str(e)}")
+            return False
 
 def main():
     print("🏗️  Starting Decorous Construction API Tests")
@@ -192,6 +385,10 @@ def main():
         ("Stats", tester.test_stats),
         ("Cost Calculator", tester.test_cost_calculator),
         ("Lead Management", tester.test_lead_creation),
+        ("Admin Authentication", tester.test_admin_authentication),
+        ("Admin Lead Management", tester.test_admin_lead_management),
+        ("Schema Markup APIs", tester.test_schema_markup_apis),
+        ("XML Sitemap", tester.test_sitemap_xml),
     ]
     
     # Run all tests

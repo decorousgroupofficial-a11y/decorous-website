@@ -1,14 +1,18 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, Response
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
+import asyncio
+import secrets
+import resend
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -18,11 +22,27 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+# Resend configuration
+resend.api_key = os.environ.get('RESEND_API_KEY', '')
+NOTIFICATION_EMAIL = os.environ.get('NOTIFICATION_EMAIL', 'contact@decorous.in')
+WHATSAPP_NUMBER = os.environ.get('WHATSAPP_NUMBER', '917008863329')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+
 # Create the main app
 app = FastAPI(title="Decorous Construction API")
 
+# Security for admin routes
+security = HTTPBasic()
+
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # ==================== MODELS ====================
 
@@ -41,6 +61,10 @@ class Lead(LeadBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str = "new"
+
+class LeadUpdate(BaseModel):
+    status: Optional[str] = None
+    notes: Optional[str] = None
 
 class Project(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -118,6 +142,131 @@ class CostEstimateResponse(BaseModel):
     breakdown: dict
     quality_description: str
 
+# ==================== EMAIL NOTIFICATION ====================
+
+async def send_lead_notification(lead: Lead):
+    """Send email notification for new lead with WhatsApp link"""
+    if not resend.api_key:
+        logger.warning("Resend API key not configured, skipping email notification")
+        return
+    
+    whatsapp_message = f"Hi {lead.name}! Thank you for your interest in Decorous construction services. I received your inquiry and would love to discuss your project. How can I help you?"
+    whatsapp_link = f"https://wa.me/{lead.phone.replace('+', '').replace(' ', '')}?text={whatsapp_message.replace(' ', '%20')}"
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ background: #1a365d; color: white; padding: 20px; text-align: center; }}
+            .header h1 {{ margin: 0; font-size: 24px; }}
+            .content {{ padding: 20px; background: #f8f9fa; }}
+            .lead-details {{ background: white; padding: 20px; border-radius: 8px; margin: 15px 0; }}
+            .lead-details h3 {{ color: #1a365d; margin-top: 0; }}
+            .detail-row {{ display: flex; padding: 8px 0; border-bottom: 1px solid #eee; }}
+            .detail-label {{ font-weight: bold; width: 140px; color: #666; }}
+            .detail-value {{ color: #333; }}
+            .whatsapp-btn {{ display: inline-block; background: #25D366; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 15px 0; }}
+            .call-btn {{ display: inline-block; background: #1a365d; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 15px 5px; }}
+            .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🏗️ New Lead Alert - Decorous</h1>
+            </div>
+            <div class="content">
+                <p>You have received a new inquiry from your website!</p>
+                
+                <div class="lead-details">
+                    <h3>Lead Details</h3>
+                    <div class="detail-row">
+                        <span class="detail-label">Name:</span>
+                        <span class="detail-value">{lead.name}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Phone:</span>
+                        <span class="detail-value">{lead.phone}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Email:</span>
+                        <span class="detail-value">{lead.email or 'Not provided'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">City:</span>
+                        <span class="detail-value">{lead.city or 'Not specified'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Plot Size:</span>
+                        <span class="detail-value">{lead.plot_size or 'Not specified'} sqft</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Construction Type:</span>
+                        <span class="detail-value">{lead.construction_type or 'Not specified'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Source:</span>
+                        <span class="detail-value">{lead.source}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Message:</span>
+                        <span class="detail-value">{lead.message or 'No message'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Received At:</span>
+                        <span class="detail-value">{lead.created_at.strftime('%d %b %Y, %I:%M %p')}</span>
+                    </div>
+                </div>
+                
+                <div style="text-align: center;">
+                    <a href="{whatsapp_link}" class="whatsapp-btn">💬 Chat on WhatsApp</a>
+                    <a href="tel:{lead.phone}" class="call-btn">📞 Call Now</a>
+                </div>
+                
+                <p style="color: #666; font-size: 14px; margin-top: 20px;">
+                    <strong>Tip:</strong> Respond within 5 minutes for the best conversion rate!
+                </p>
+            </div>
+            <div class="footer">
+                <p>This notification was sent from your Decorous website lead capture system.</p>
+                <p>© 2024 Decorous Construction | Bhubaneswar, Odisha</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    try:
+        params = {
+            "from": "Decorous Leads <onboarding@resend.dev>",
+            "to": [NOTIFICATION_EMAIL],
+            "subject": f"🏗️ New Lead: {lead.name} - {lead.city or 'Website'}",
+            "html": html_content
+        }
+        
+        # Run sync SDK in thread to keep FastAPI non-blocking
+        email = await asyncio.to_thread(resend.Emails.send, params)
+        logger.info(f"Email notification sent for lead: {lead.name}, email_id: {email.get('id')}")
+        return email
+    except Exception as e:
+        logger.error(f"Failed to send email notification: {str(e)}")
+        return None
+
+# ==================== ADMIN AUTH ====================
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_password = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+    if not (credentials.username == "admin" and correct_password):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
 # ==================== ROUTES ====================
 
 @api_router.get("/")
@@ -131,15 +280,66 @@ async def create_lead(input: LeadBase):
     doc = lead.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.leads.insert_one(doc)
+    
+    # Send email notification (non-blocking)
+    asyncio.create_task(send_lead_notification(lead))
+    
     return lead
 
 @api_router.get("/leads", response_model=List[Lead])
 async def get_leads():
-    leads = await db.leads.find({}, {"_id": 0}).to_list(1000)
+    leads = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     for lead in leads:
         if isinstance(lead.get('created_at'), str):
             lead['created_at'] = datetime.fromisoformat(lead['created_at'])
     return leads
+
+# Admin Lead Routes
+@api_router.get("/admin/leads")
+async def get_admin_leads(admin: str = Depends(verify_admin)):
+    leads = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    for lead in leads:
+        if isinstance(lead.get('created_at'), str):
+            lead['created_at'] = datetime.fromisoformat(lead['created_at'])
+    
+    # Get stats
+    total = len(leads)
+    new_count = sum(1 for l in leads if l.get('status') == 'new')
+    contacted_count = sum(1 for l in leads if l.get('status') == 'contacted')
+    converted_count = sum(1 for l in leads if l.get('status') == 'converted')
+    
+    return {
+        "leads": leads,
+        "stats": {
+            "total": total,
+            "new": new_count,
+            "contacted": contacted_count,
+            "converted": converted_count
+        }
+    }
+
+@api_router.patch("/admin/leads/{lead_id}")
+async def update_lead(lead_id: str, update: LeadUpdate, admin: str = Depends(verify_admin)):
+    update_data = {k: v for k, v in update.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No update data provided")
+    
+    result = await db.leads.update_one(
+        {"id": lead_id},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    return {"status": "success", "updated": update_data}
+
+@api_router.delete("/admin/leads/{lead_id}")
+async def delete_lead(lead_id: str, admin: str = Depends(verify_admin)):
+    result = await db.leads.delete_one({"id": lead_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return {"status": "success", "deleted": lead_id}
 
 # Projects Routes
 @api_router.get("/projects", response_model=List[Project])
@@ -219,7 +419,6 @@ async def get_testimonials():
 # Cost Calculator
 @api_router.post("/calculate-cost", response_model=CostEstimateResponse)
 async def calculate_cost(estimate: CostEstimate):
-    # Cost per sqft based on quality
     quality_costs = {
         "basic": 1700,
         "standard": 2000,
@@ -232,7 +431,6 @@ async def calculate_cost(estimate: CostEstimate):
         "premium": "Premium materials with luxury finishes - Top-tier construction quality"
     }
     
-    # Location multiplier
     location_multipliers = {
         "bhubaneswar": 1.0,
         "cuttack": 0.95,
@@ -250,7 +448,6 @@ async def calculate_cost(estimate: CostEstimate):
     total_area = estimate.plot_size * estimate.floors
     construction_cost = total_area * adjusted_cost_per_sqft
     
-    # Additional costs
     foundation_cost = int(estimate.plot_size * 300)
     electrical_cost = int(total_area * 150)
     plumbing_cost = int(total_area * 100)
@@ -282,6 +479,142 @@ async def get_stats():
         "years_experience": 8
     }
 
+# ==================== SITEMAP ====================
+
+@api_router.get("/sitemap.xml")
+async def get_sitemap():
+    base_url = "https://decorous.in"
+    
+    # Get dynamic content
+    services = await db.services.find({}, {"_id": 0, "slug": 1}).to_list(10)
+    cities = await db.cities.find({}, {"_id": 0, "slug": 1}).to_list(50)
+    blog_posts = await db.blog_posts.find({}, {"_id": 0, "slug": 1}).to_list(100)
+    
+    urls = [
+        {"loc": base_url, "priority": "1.0", "changefreq": "weekly"},
+        {"loc": f"{base_url}/about", "priority": "0.8", "changefreq": "monthly"},
+        {"loc": f"{base_url}/services", "priority": "0.9", "changefreq": "weekly"},
+        {"loc": f"{base_url}/projects", "priority": "0.8", "changefreq": "weekly"},
+        {"loc": f"{base_url}/process", "priority": "0.7", "changefreq": "monthly"},
+        {"loc": f"{base_url}/blog", "priority": "0.8", "changefreq": "daily"},
+        {"loc": f"{base_url}/cities", "priority": "0.8", "changefreq": "weekly"},
+        {"loc": f"{base_url}/contact", "priority": "0.9", "changefreq": "monthly"},
+        {"loc": f"{base_url}/cost-calculator", "priority": "0.9", "changefreq": "monthly"},
+    ]
+    
+    # Add service pages
+    for service in services:
+        urls.append({
+            "loc": f"{base_url}/services/{service['slug']}",
+            "priority": "0.8",
+            "changefreq": "monthly"
+        })
+    
+    # Add city pages
+    for city in cities:
+        urls.append({
+            "loc": f"{base_url}/cities/{city['slug']}",
+            "priority": "0.8",
+            "changefreq": "monthly"
+        })
+    
+    # Add blog posts
+    for post in blog_posts:
+        urls.append({
+            "loc": f"{base_url}/blog/{post['slug']}",
+            "priority": "0.6",
+            "changefreq": "monthly"
+        })
+    
+    # Generate XML
+    xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml_content += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    
+    for url in urls:
+        xml_content += '  <url>\n'
+        xml_content += f'    <loc>{url["loc"]}</loc>\n'
+        xml_content += f'    <changefreq>{url["changefreq"]}</changefreq>\n'
+        xml_content += f'    <priority>{url["priority"]}</priority>\n'
+        xml_content += '  </url>\n'
+    
+    xml_content += '</urlset>'
+    
+    return Response(content=xml_content, media_type="application/xml")
+
+# ==================== SCHEMA MARKUP ====================
+
+@api_router.get("/schema/organization")
+async def get_organization_schema():
+    return {
+        "@context": "https://schema.org",
+        "@type": "ConstructionCompany",
+        "name": "Decorous",
+        "description": "Leading construction company in Odisha offering residential, commercial, interior design, warehouse, and PEB construction services.",
+        "url": "https://decorous.in",
+        "logo": "https://customer-assets.emergentagent.com/job_construct-pro-139/artifacts/yeay7w37_Silton_Associates__2_-removebg-preview.png",
+        "telephone": "+917008863329",
+        "email": "contact@decorous.in",
+        "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Bhubaneswar",
+            "addressRegion": "Odisha",
+            "addressCountry": "IN"
+        },
+        "geo": {
+            "@type": "GeoCoordinates",
+            "latitude": "20.2961",
+            "longitude": "85.8245"
+        },
+        "areaServed": [
+            {"@type": "City", "name": "Bhubaneswar"},
+            {"@type": "City", "name": "Cuttack"},
+            {"@type": "City", "name": "Puri"},
+            {"@type": "City", "name": "Khordha"},
+            {"@type": "City", "name": "Rourkela"},
+            {"@type": "City", "name": "Berhampur"},
+            {"@type": "City", "name": "Sambalpur"}
+        ],
+        "serviceType": [
+            "Residential Construction",
+            "Commercial Construction",
+            "Interior Design",
+            "Warehouse Construction",
+            "Pre-Engineered Buildings"
+        ],
+        "priceRange": "₹₹₹",
+        "openingHours": "Mo-Sa 09:00-19:00",
+        "sameAs": [
+            "https://www.facebook.com/decorous",
+            "https://www.instagram.com/decorous",
+            "https://www.linkedin.com/company/decorous"
+        ]
+    }
+
+@api_router.get("/schema/local-business")
+async def get_local_business_schema():
+    return {
+        "@context": "https://schema.org",
+        "@type": "LocalBusiness",
+        "@id": "https://decorous.in/#business",
+        "name": "Decorous - Construction Company Bhubaneswar",
+        "image": "https://customer-assets.emergentagent.com/job_construct-pro-139/artifacts/yeay7w37_Silton_Associates__2_-removebg-preview.png",
+        "telephone": "+917008863329",
+        "email": "contact@decorous.in",
+        "address": {
+            "@type": "PostalAddress",
+            "streetAddress": "Bhubaneswar",
+            "addressLocality": "Bhubaneswar",
+            "addressRegion": "Odisha",
+            "postalCode": "751001",
+            "addressCountry": "IN"
+        },
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.9",
+            "reviewCount": "150"
+        }
+    }
+
 # Include the router in the main app
 app.include_router(api_router)
 
@@ -292,13 +625,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

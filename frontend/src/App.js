@@ -1,5 +1,5 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 
 // Layout Components
@@ -21,13 +21,33 @@ import CityPage from "@/pages/CityPage";
 import CitiesListPage from "@/pages/CitiesListPage";
 import ContactPage from "@/pages/ContactPage";
 import CostCalculatorPage from "@/pages/CostCalculatorPage";
+import AdminPage from "@/pages/AdminPage";
+
+// Layout wrapper that hides header/footer for admin
+const Layout = ({ children }) => {
+  const location = useLocation();
+  const isAdmin = location.pathname === '/admin';
+  
+  if (isAdmin) {
+    return children;
+  }
+  
+  return (
+    <>
+      <Header />
+      <main className="min-h-screen">{children}</main>
+      <Footer />
+      <FloatingButtons />
+      <MobileBottomBar />
+    </>
+  );
+};
 
 function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <Header />
-        <main className="min-h-screen">
+        <Layout>
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/about" element={<AboutPage />} />
@@ -41,11 +61,9 @@ function App() {
             <Route path="/cities/:slug" element={<CityPage />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/cost-calculator" element={<CostCalculatorPage />} />
+            <Route path="/admin" element={<AdminPage />} />
           </Routes>
-        </main>
-        <Footer />
-        <FloatingButtons />
-        <MobileBottomBar />
+        </Layout>
         <Toaster position="top-right" />
       </BrowserRouter>
     </div>
