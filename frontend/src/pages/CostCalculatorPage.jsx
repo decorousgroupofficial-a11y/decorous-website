@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from 'sonner';
 import axios from 'axios';
+import { trackCostCalculation, trackLeadSubmission } from '@/utils/analytics';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -75,6 +76,16 @@ const CostCalculatorPage = () => {
         city: formData.city
       });
       setResult(response.data);
+      
+      // Track cost calculation event
+      trackCostCalculation({
+        plot_size: formData.plot_size,
+        floors: formData.floors,
+        quality: formData.quality,
+        city: formData.city,
+        estimated_cost: response.data.estimated_cost
+      });
+      
       setStep(2);
     } catch (error) {
       console.error('Error calculating cost:', error);
@@ -102,6 +113,14 @@ const CostCalculatorPage = () => {
         construction_type: `${formData.quality.charAt(0).toUpperCase() + formData.quality.slice(1)} Construction`,
         source: 'cost_calculator',
         message: `Estimated Cost: ₹${result?.estimated_cost?.toLocaleString('en-IN')} | Plot: ${formData.plot_size} sqft | Floors: ${formData.floors}`
+      });
+      
+      // Track lead conversion from calculator
+      trackLeadSubmission({
+        source: 'cost_calculator',
+        city: cities.find(c => c.value === formData.city)?.label,
+        construction_type: `${formData.quality} Construction`,
+        estimated_value: result?.estimated_cost
       });
       
       toast.success('Details submitted! Our team will contact you shortly.');

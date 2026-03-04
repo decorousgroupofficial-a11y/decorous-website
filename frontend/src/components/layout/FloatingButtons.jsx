@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { MessageCircle, ChevronUp } from 'lucide-react';
+import { trackWhatsAppClick } from '@/utils/analytics';
 
 const FloatingButtons = () => {
   const [showBackToTop, setShowBackToTop] = useState(false);
@@ -18,6 +19,10 @@ const FloatingButtons = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleWhatsAppClick = () => {
+    trackWhatsAppClick();
+  };
+
   return (
     <>
       {/* WhatsApp Button */}
@@ -25,6 +30,7 @@ const FloatingButtons = () => {
         href={`https://wa.me/${whatsappNumber}?text=${whatsappMessage}`}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={handleWhatsAppClick}
         className="fixed bottom-24 right-4 md:bottom-8 md:right-8 z-50 bg-[#25D366] text-white p-4 rounded-full shadow-lg hover:scale-110 transition-transform duration-300"
         data-testid="whatsapp-float-btn"
         aria-label="Chat on WhatsApp"

@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import axios from 'axios';
+import { trackLeadSubmission } from '@/utils/analytics';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -64,6 +65,13 @@ const LeadForm = ({
         source
       });
       
+      // Track conversion event
+      trackLeadSubmission({
+        source,
+        city: formData.city,
+        construction_type: formData.construction_type
+      });
+      
       toast.success('Thank you! We will contact you shortly.');
       setFormData({
         name: '',
@@ -76,10 +84,6 @@ const LeadForm = ({
       });
       
       if (onSuccess) onSuccess();
-      
-      // WhatsApp notification link
-      const whatsappMessage = `New Lead from ${source}:%0AName: ${formData.name}%0APhone: ${formData.phone}%0ACity: ${formData.city || 'Not specified'}`;
-      console.log('WhatsApp notification:', `https://wa.me/917008863329?text=${whatsappMessage}`);
       
     } catch (error) {
       console.error('Error submitting form:', error);
