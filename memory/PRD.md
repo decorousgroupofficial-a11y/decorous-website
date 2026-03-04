@@ -8,6 +8,7 @@ Build a Google-Dominating Lead Generation Website for Decorous - a construction 
 - **Backend**: FastAPI with Python
 - **Database**: MongoDB
 - **Email**: Resend API for lead notifications
+- **Analytics**: Google Analytics 4 (GA4) + Meta Pixel
 - **Deployment**: Kubernetes-based container
 
 ## User Personas
@@ -25,6 +26,7 @@ Build a Google-Dominating Lead Generation Website for Decorous - a construction 
 - Premium engineering brand aesthetic (Deep Blue #1a365d + Gold #F5A623)
 - Email notifications for new leads
 - Admin dashboard for lead management
+- Analytics tracking for all conversions
 
 ## What's Been Implemented
 
@@ -50,6 +52,21 @@ Build a Google-Dominating Lead Generation Website for Decorous - a construction 
 - **Schema Markup**: Organization and LocalBusiness JSON-LD schemas injected in homepage
 - **XML Sitemap**: Dynamic sitemap at /api/sitemap.xml with 45+ URLs
 
+### Phase 3 - Analytics & Tracking (March 2026) ✅
+- **Google Analytics 4**: Measurement ID G-YFJ0E82MK6
+  - Page view tracking
+  - Lead submission events (generate_lead)
+  - Cost calculator events (cost_calculator_used)
+  - Phone/WhatsApp click tracking
+  - Service/blog view tracking
+- **Meta Ads Pixel**: Pixel ID 965442971770619
+  - PageView on all pages
+  - Lead events on form submissions
+  - CustomizeProduct on cost calculations
+  - Contact events on phone/WhatsApp clicks
+  - ViewContent on service/blog pages
+- **SEO Meta Tags**: Open Graph and Twitter Card tags for social sharing
+
 ### API Endpoints
 - GET/POST /api/leads - Lead management
 - GET/PATCH/DELETE /api/admin/leads/{id} - Admin lead operations
@@ -70,8 +87,7 @@ Build a Google-Dominating Lead Generation Website for Decorous - a construction 
 
 ### P1 - High Priority
 - Add 80 more blog articles to reach 100 total
-- Google Analytics integration
-- Meta Ads pixel integration
+- Create Google Ads landing pages
 
 ### P2 - Medium Priority
 - Image optimization with lazy loading
@@ -85,11 +101,17 @@ Build a Google-Dominating Lead Generation Website for Decorous - a construction 
 - Before/After project gallery
 - Construction timeline tracker for clients
 
-## Admin Credentials
+## Credentials & IDs
+
+### Admin Dashboard
 - **URL**: /admin
 - **Password**: Decorous@2024
 
-## Contact Information
+### Analytics
+- **Google Analytics**: G-YFJ0E82MK6
+- **Meta Pixel**: 965442971770619
+
+### Contact Information
 - **Phone**: 7008863329
 - **Email**: contact@decorous.in
 - **WhatsApp**: +91 7008863329
