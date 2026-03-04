@@ -1,0 +1,141 @@
+{
+  "brand_identity": {
+    "name": "Decorous",
+    "mission": "To be the #1 construction and design partner in Odisha, delivering premium quality and engineering excellence.",
+    "archetype": "The Performance Pro / Engineering Trust",
+    "tone": "Professional, Trustworthy, Premium, Engineering-focused, Clear",
+    "target_audience": "Homeowners, Business Owners, Industries in Odisha looking for quality construction."
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Manrope, sans-serif",
+      "body": "IBM Plex Sans, sans-serif",
+      "accent": "Barlow Condensed, sans-serif"
+    },
+    "scale": {
+      "h1": "text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight",
+      "h2": "text-3xl md:text-4xl font-semibold tracking-tight",
+      "h3": "text-2xl md:text-3xl font-semibold",
+      "body_large": "text-lg md:text-xl leading-relaxed",
+      "body_base": "text-base leading-relaxed text-slate-600",
+      "caption": "text-sm text-slate-500 uppercase tracking-wider"
+    },
+    "imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=IBM+Plex+Sans:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap');"
+    ]
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#1a365d",
+      "foreground": "#ffffff",
+      "description": "Deep Blue - Trust, Stability, Engineering"
+    },
+    "accent": {
+      "DEFAULT": "#F5A623",
+      "foreground": "#000000",
+      "description": "Gold - Luxury, Quality, High Visibility for CTAs"
+    },
+    "secondary": {
+      "DEFAULT": "#f1f5f9",
+      "foreground": "#0f172a",
+      "description": "Slate 100 - Subtle backgrounds"
+    },
+    "background": {
+      "DEFAULT": "#ffffff",
+      "alt": "#f8fafc"
+    },
+    "text": {
+      "primary": "#0f172a",
+      "secondary": "#475569",
+      "muted": "#94a3b8"
+    },
+    "status": {
+      "success": "#10b981",
+      "error": "#ef4444",
+      "warning": "#f59e0b"
+    }
+  },
+  "layout_strategies": {
+    "spacing": {
+      "section_padding": "py-16 md:py-24",
+      "container_padding": "px-4 md:px-8",
+      "card_padding": "p-6 md:p-8",
+      "element_gap": "gap-4 md:gap-8"
+    },
+    "grid_system": {
+      "features": "grid grid-cols-1 md:grid-cols-3 gap-8",
+      "services": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6",
+      "bento": "grid grid-cols-1 md:grid-cols-4 gap-4"
+    },
+    "containers": {
+      "max_width": "max-w-7xl mx-auto"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#F5A623] text-black hover:bg-[#e09612] font-semibold rounded-md shadow-md transition-all duration-200 hover:shadow-lg active:scale-95 px-8 py-3",
+      "secondary": "bg-[#1a365d] text-white hover:bg-[#132845] font-semibold rounded-md transition-all duration-200 px-8 py-3",
+      "outline": "border-2 border-[#1a365d] text-[#1a365d] hover:bg-[#1a365d] hover:text-white font-medium rounded-md transition-all duration-200 px-6 py-2",
+      "ghost": "text-[#1a365d] hover:bg-slate-100 font-medium transition-colors"
+    },
+    "cards": {
+      "service_card": "bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden group border-t-4 border-t-[#F5A623]",
+      "feature_card": "bg-slate-50 p-8 rounded-xl border border-slate-100 hover:border-[#F5A623]/30 transition-colors",
+      "testimonial_card": "bg-white p-8 rounded-2xl shadow-sm border border-slate-100 relative"
+    },
+    "inputs": {
+      "default": "flex h-12 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a365d] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+    }
+  },
+  "image_urls": {
+    "hero": {
+      "main": "https://images.unsplash.com/photo-1769780510442-60d4d6391a91?q=85&w=1920&auto=format&fit=crop",
+      "alt": "Modern luxury residential house exterior by Decorous"
+    },
+    "services": {
+      "residential": "https://images.unsplash.com/photo-1766603636562-531bb3e1dda8?q=85&w=800&auto=format&fit=crop",
+      "commercial": "https://images.unsplash.com/photo-1747085040719-55282cc206b9?q=85&w=800&auto=format&fit=crop",
+      "interior": "https://images.unsplash.com/photo-1580674287256-40141f08e9a5?q=85&w=800&auto=format&fit=crop",
+      "warehouse": "https://images.unsplash.com/photo-1747085040719-55282cc206b9?q=85&w=800&auto=format&fit=crop",
+      "peb": "https://images.unsplash.com/photo-1734555772444-469ee8b45914?q=85&w=800&auto=format&fit=crop"
+    },
+    "trust": {
+      "engineer": "https://images.unsplash.com/photo-1628146023674-ede6049609b1?q=85&w=600&auto=format&fit=crop",
+      "site_work": "https://images.unsplash.com/photo-1632516160994-b4463d4e19d2?q=85&w=600&auto=format&fit=crop",
+      "safety": "https://images.unsplash.com/photo-1768158988512-ad31657fe5b8?q=85&w=600&auto=format&fit=crop"
+    }
+  },
+  "visual_enhancers": {
+    "shadows": "shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)]",
+    "gradients": "bg-gradient-to-br from-[#1a365d] to-[#0f2442] (Use sparingly for Hero/Footer only)",
+    "borders": "border border-slate-200",
+    "micro_interactions": "hover:-translate-y-1 transition-transform duration-300"
+  },
+  "lead_generation_features": {
+    "floating_whatsapp": "Fixed bottom-right button, z-50, vivid green (#25D366)",
+    "sticky_header_cta": "Mobile only: Fixed bottom bar with 'Call Now' and 'Get Quote' buttons",
+    "forms": "Multi-step cost calculator, simple inline lead capture in Hero (Name, Phone, Service)"
+  },
+  "accessibility": {
+    "contrast": "Ensure text over primary blue is white. Text over accent gold must be black.",
+    "focus_states": "focus:ring-2 focus:ring-offset-2 focus:ring-[#1a365d]",
+    "reduced_motion": "Respect prefers-reduced-motion media query"
+  },
+  "instructions_to_main_agent": [
+    "Install 'lucide-react' for icons.",
+    "Use 'Manrope' for all headings and 'IBM Plex Sans' for body text. Add imports to index.css.",
+    "Implement the 'Cost Calculator' as a multi-step wizard using Shadcn Tabs or custom state.",
+    "Ensure the 'Get a Quote' button is visible in the sticky header.",
+    "Create a dedicated 'Services' dropdown in the navigation.",
+    "Use the provided image URLs for specific sections. Do not use placeholders.",
+    "Footer must be dark (#1a365d) with gold accents.",
+    "For the 'Projects' page, use a masonry or grid layout with category filters.",
+    "Add 'data-testid' to all interactive elements."
+  ],
+  "universal_guidelines": [
+    "Do not use gradients for text.",
+    "Avoid centering long blocks of text.",
+    "Use generous padding (py-20) for major sections.",
+    "Ensure mobile responsiveness for all tables and grids."
+  ]
+}
