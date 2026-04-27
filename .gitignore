@@ -78,19 +78,17 @@ agenthub/agents/youtube/db
 
 # Mobile development
 android-sdk/ -e 
-# Environment and credential files
-.env
-.env.*
-*.env
+# Environment and credential files (Emergent deploy needs .env committed — local overrides only)
+.env.local
+.env.*.local
 credentials.json
 *.pem
 *.key
 .credentials
 -e 
-# Environment and credential files
-.env
-.env.*
-*.env
+# Environment and credential files (Emergent deploy needs .env committed — local overrides only)
+.env.local
+.env.*.local
 credentials.json
 *.pem
 *.key
