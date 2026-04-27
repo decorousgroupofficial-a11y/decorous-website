@@ -23,12 +23,27 @@ import ContactPage from "@/pages/ContactPage";
 import CostCalculatorPage from "@/pages/CostCalculatorPage";
 import AdminPage from "@/pages/AdminPage";
 
-// Layout wrapper that hides header/footer for admin
+// ERP pages (app.decorous.in)
+import ErpLoginPage from "@/pages/erp/ErpLoginPage";
+import ErpSignupPage from "@/pages/erp/ErpSignupPage";
+import ErpLayout from "@/pages/erp/ErpLayout";
+import ErpOverviewPage from "@/pages/erp/ErpOverviewPage";
+import ErpProjectsPage from "@/pages/erp/ErpProjectsPage";
+import ErpVendorsPage from "@/pages/erp/ErpVendorsPage";
+import ErpMaterialsPage from "@/pages/erp/ErpMaterialsPage";
+import ErpDprListPage from "@/pages/erp/ErpDprListPage";
+import ErpDprNewPage from "@/pages/erp/ErpDprNewPage";
+import ErpExpensesPage from "@/pages/erp/ErpExpensesPage";
+import ErpApprovalsPage from "@/pages/erp/ErpApprovalsPage";
+import ErpSettingsPage from "@/pages/erp/ErpSettingsPage";
+
+// Layout wrapper that hides header/footer for admin and ERP
 const Layout = ({ children }) => {
   const location = useLocation();
   const isAdmin = location.pathname === '/admin';
+  const isErp = location.pathname.startsWith('/erp');
   
-  if (isAdmin) {
+  if (isAdmin || isErp) {
     return children;
   }
   
@@ -62,6 +77,21 @@ function App() {
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/cost-calculator" element={<CostCalculatorPage />} />
             <Route path="/admin" element={<AdminPage />} />
+
+            {/* ERP (app.decorous.in) */}
+            <Route path="/erp/login" element={<ErpLoginPage />} />
+            <Route path="/erp/signup" element={<ErpSignupPage />} />
+            <Route path="/erp" element={<ErpLayout />}>
+              <Route index element={<ErpOverviewPage />} />
+              <Route path="projects" element={<ErpProjectsPage />} />
+              <Route path="vendors" element={<ErpVendorsPage />} />
+              <Route path="materials" element={<ErpMaterialsPage />} />
+              <Route path="dpr" element={<ErpDprListPage />} />
+              <Route path="dpr/new" element={<ErpDprNewPage />} />
+              <Route path="expenses" element={<ErpExpensesPage />} />
+              <Route path="approvals" element={<ErpApprovalsPage />} />
+              <Route path="settings" element={<ErpSettingsPage />} />
+            </Route>
           </Routes>
         </Layout>
         <Toaster position="top-right" />

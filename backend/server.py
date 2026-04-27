@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import asyncio
 import secrets
 import resend
+from erp_routes import router as erp_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -617,6 +618,7 @@ async def get_local_business_schema():
 
 # Include the router in the main app
 app.include_router(api_router)
+app.include_router(erp_router)
 
 app.add_middleware(
     CORSMiddleware,
