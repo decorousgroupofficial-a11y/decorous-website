@@ -88,6 +88,7 @@ Build a Google-Dominating Lead Generation Website for Decorous - a construction 
 ### P1 - High Priority
 - Add 80 more blog articles to reach 100 total
 - Create Google Ads landing pages
+- Dynamic image upload / management on main marketing site (admin UI)
 
 ### P2 - Medium Priority
 - Image optimization with lazy loading
@@ -100,6 +101,59 @@ Build a Google-Dominating Lead Generation Website for Decorous - a construction 
 - Customer testimonial video section
 - Before/After project gallery
 - Construction timeline tracker for clients
+
+---
+
+## NEW PRODUCT: Decorous Construction ERP (app.decorous.in)
+
+### Scope (user mandate — Feb 2026)
+Standalone Construction ERP + execution platform on **isolated subdomain `app.decorous.in`**. Marketing site (decorous.in, /app/frontend + /app/backend) MUST remain 100% untouched.
+
+### Stack (user-confirmed)
+- Frontend web: Next.js 14 (App Router) + TypeScript
+- Frontend mobile: React Native (Expo)
+- Backend: NestJS + TypeScript
+- DB: PostgreSQL 16
+- Queue: BullMQ + Redis
+- Storage: S3 (Mumbai region)
+- Monorepo: Turborepo at `/app/erp/` (NOT yet scaffolded)
+- Deploy: Vercel (web) + Railway/DO (backend). NOT deployable from this Kubernetes preview.
+
+### MVP Scope (locked — Doc 07 §2)
+Only three pillars:
+1. Financial tracking (double-entry ledger + bills + P&L)
+2. Material tracking (PO → GRN → consume)
+3. DPR (daily progress report + labour + photos)
+
+Explicitly EXCLUDED from MVP: Gantt, AI, payroll, multi-currency, GST return filing, quotation module, client portal, IoT, BIM viewer.
+
+### Documentation Status (Phase 0 — Design)
+All 8 architecture deliverables complete in `/app/docs/erp/`:
+1. ✅ `01-system-architecture.md` — infra, DNS isolation, component diagram
+2. ✅ `02-database-schema.md` — PostgreSQL schema
+3. ✅ `03-financial-ledger-system.md` — double-entry design + CA-grade rules
+4. ✅ `04-api-design.md` — REST contract, idempotency, RBAC
+5. ✅ `05-ui-wireframes.md` — web admin + field app screens (Feb 2026)
+6. ✅ `06-sync-architecture.md` — offline outbox, event bus, conflict resolution (Feb 2026)
+7. ✅ `07-roadmap-and-costs.md` — 6-month phased plan, team, ₹73 L MVP budget (Feb 2026)
+8. ✅ `08-tech-justification-and-risks.md` — stack rationale + risk matrix + DR plan (Feb 2026)
+
+### Next Steps (awaiting user approval)
+- Phase 0 (Week 0): Scaffold `/app/erp/` monorepo (NestJS + Next.js + Expo), CI, Postgres, COA seed
+- Phase 1 (Month 1): Auth, orgs, projects, RBAC
+- Phase 2 (Month 2): Ledger core (most critical — CA sign-off gate)
+- Phase 3 (Month 3): Vendor bills, materials, approvals
+- Phase 4 (Month 4): Mobile field app + sync
+- Phase 5 (Month 5): Beta hardening
+- Phase 6 (Month 6): GA
+
+### Open Decision Points (user input needed before Phase 0)
+1. Repo: monorepo inside `/app/erp/` OR separate Git org?
+2. Hosting region confirmation (Mumbai preferred)
+3. DNS ownership / Cloudflare access for `app.decorous.in`
+4. Existing CA engaged, or hire fresh?
+5. Which project becomes Month-4 pilot?
+6. Budget envelope: ₹73 L full OR ₹45-50 L lean (timeline +2-3 months)?
 
 ## Credentials & IDs
 
