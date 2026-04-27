@@ -132,6 +132,10 @@ export const erpApi = {
   // uploads
   presignUpload: (body) =>
     client.post("/api/erp/uploads/presign", body).then((r) => r.data),
+  uploadInline: (body) =>
+    client.post("/api/erp/uploads/inline", body).then((r) => r.data),
+  getUpload: (key) =>
+    client.get(`/api/erp/uploads/${encodeURIComponent(key)}`).then((r) => r.data),
 };
 
 export function formatPaise(paise) {
@@ -152,4 +156,33 @@ export function formatDate(iso) {
     month: "short",
     year: "numeric",
   }).format(d);
+}
+
+/**
+ * Client-side resize + JPEG compress, returning base64 (no data: prefix).
+ * Keeps DPR/expense photos small enough to store inline in Mongo.
+ */
+export async function fileToCompressedBase64(file, { maxDim = 1280, quality = 0.72 } = {}) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = reject;
+    i.src = dataUrl;
+  });
+  const ratio = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const w = Math.round(img.width * ratio);
+  const h = Math.round(img.height * ratio);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, w, h);
+  const jpeg = canvas.toDataURL("image/jpeg", quality);
+  return jpeg.split(",")[1]; // strip "data:image/jpeg;base64,"
 }

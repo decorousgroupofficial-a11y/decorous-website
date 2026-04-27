@@ -55,6 +55,7 @@ col_approvals = _db["erp_approvals"]
 col_approval_events = _db["erp_approval_events"]
 col_audit_log = _db["erp_audit_log"]
 col_idempotency = _db["erp_idempotency"]
+col_uploads = _db["erp_uploads"]
 
 
 # ── Router ───────────────────────────────────────────────────────────────────
@@ -927,6 +928,51 @@ async def presign_upload(
 async def upload_stub(rest: str):
     """Accepts the file and discards it. Real S3 replaces this."""
     return {"ok": True, "key": rest}
+
+
+# ── Inline uploads (base64 stored in Mongo; Phase 1.5 will move to S3) ───────
+
+class InlineUploadIn(BaseModel):
+    kind: str = Field(default="generic", max_length=40)
+    content_type: str = Field(default="image/jpeg")
+    data_base64: str  # base64 without the data: prefix
+
+
+# ~900 KB cap per image post-compression; generous headroom for client-side
+# resizing that typically lands around 120-250 KB.
+INLINE_MAX_BYTES = 900_000
+
+
+@router.post("/uploads/inline")
+async def inline_upload(dto: InlineUploadIn, ctx: AuthCtx = Depends(get_ctx)):
+    # rough size estimate from base64 length
+    approx_bytes = (len(dto.data_base64) * 3) // 4
+    if approx_bytes > INLINE_MAX_BYTES:
+        raise HTTPException(400, f"Image too large (>{INLINE_MAX_BYTES // 1000} KB). Resize on device.")
+    key = f"{ctx.org_id}/{dto.kind}/{_uid()}"
+    await col_uploads.insert_one({
+        "_id": key,
+        "org_id": ctx.org_id,
+        "kind": dto.kind,
+        "content_type": dto.content_type,
+        "data_base64": dto.data_base64,
+        "bytes": approx_bytes,
+        "uploaded_by_id": ctx.user_id,
+        "created_at": _now(),
+    })
+    return {"object_key": key, "bytes": approx_bytes}
+
+
+@router.get("/uploads/{object_key:path}")
+async def get_inline_upload(object_key: str, ctx: AuthCtx = Depends(get_ctx)):
+    doc = await col_uploads.find_one({"_id": object_key, "org_id": ctx.org_id})
+    if not doc:
+        raise HTTPException(404, "Upload not found")
+    return {
+        "object_key": object_key,
+        "content_type": doc["content_type"],
+        "data_url": f"data:{doc['content_type']};base64,{doc['data_base64']}",
+    }
 
 
 # ── Overview KPI ─────────────────────────────────────────────────────────────
