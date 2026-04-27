@@ -19,6 +19,7 @@ import { DprModule } from './modules/dpr/dpr.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     ExpensesModule,
     ApprovalsModule,
     UploadsModule,
+    SchedulerModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

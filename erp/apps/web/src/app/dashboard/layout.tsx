@@ -8,6 +8,7 @@ const NAV = [
   { href: '/dashboard/dpr', label: 'DPR' },
   { href: '/dashboard/expenses', label: 'Expenses' },
   { href: '/dashboard/approvals', label: 'Approvals' },
+  { href: '/dashboard/settings', label: 'Settings' },
 ];
 
 export default function DashboardLayout({

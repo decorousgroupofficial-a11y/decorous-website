@@ -185,7 +185,11 @@ Location: `/app/erp/` (67 files, 0 node_modules, zero impact on marketing site).
 
 **Shared UI primitives:** `Button`, `Input`, `Card`, `Badge`, `PageHeader`, `EmptyState` in `components/ui.tsx` + `cn()` / `formatPaise()` / `formatDate()` utilities.
 
-**Total file count:** 89 files in `/app/erp/`, 596K, zero node_modules in preview, marketing site untouched.
+**Phase 1 polish shipped (Feb 2026 — after GitHub push):**
+- `/dashboard` — real KPI counts (active projects, pending approvals with ₹ sum, DPRs today, month spend) + amber "approvals waiting" banner
+- `/dashboard/settings` — org info + members list + invite member dialog + PIN setup modal (4-digit, confirm, API-wired)
+- Scheduler module — `SchedulerService` runs `EscalationService.sweep()` every 10 min on boot
+- `DEPLOY.md` at `/app/erp/DEPLOY.md` — 7-step Vercel + Railway + Cloudflare + S3 runbook with exact env vars and cost estimate (~$6-40/mo)
 
 ### Documentation Status (Phase 0 — Design)
 All 9 architecture deliverables complete in `/app/docs/erp/`:
