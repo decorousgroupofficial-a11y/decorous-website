@@ -1,0 +1,465 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Decorous ERP — Prisma Schema (Phase 0 — non-ledger)
+//
+// Design principles (non-negotiable — see /app/docs/erp/09-cto-review-amendments.md):
+//   • Multi-tenant: every domain table has org_id.
+//   • Ledger-ready: capture tables carry source_type, source_ref, approval_status,
+//     ledger_posted, and ledger_entry_id — Phase 2 ledger integration is a MAPPING,
+//     not a migration.
+//   • Money: INTEGER paise (amount_cents) + ISO-4217 currency. NEVER float.
+//   • Immutable audit: every mutation writes an audit_log row (via interceptor).
+//   • Approvals: every write to capture tables flows through the `approvals` table —
+//     direct writes that skip approval are refused by service guards.
+//   • Ledger freeze: NO journal_entry, NO account, NO balance tables until the
+//     engaged CA signs off governance design (Doc 09 §1).
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────── Tenancy ─────────────
+
+model Org {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  country     String   @default("IN")
+  currency    String   @default("INR")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       Membership[]
+  projects    Project[]
+  vendors     Vendor[]
+  materials   Material[]
+  expenses    Expense[]
+  dprs        Dpr[]
+  approvals   Approval[]
+  auditLogs   AuditLog[]
+  devices     Device[]
+
+  @@map("orgs")
+}
+
+// ───────────── Identity & Access ─────────────
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  phone          String?  @unique
+  fullName       String
+  passwordHash   String
+  pinHash        String?               // 4-digit PIN for approvals (hashed, never stored raw)
+  isActive       Boolean  @default(true)
+  lastLoginAt    DateTime?
+  failedLogins   Int      @default(0)
+  lockedUntil    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  memberships    Membership[]
+  devices        Device[]
+  createdProjects Project[] @relation("ProjectCreator")
+
+  @@map("users")
+}
+
+enum Role {
+  OWNER
+  ACCOUNTANT
+  PM
+  ENGINEER
+  STOREKEEPER
+  VIEWER
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  role      Role
+  invitedAt DateTime @default(now())
+  acceptedAt DateTime?
+
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([orgId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+model Device {
+  id           String   @id @default(cuid())
+  orgId        String
+  userId       String
+  label        String                // "Rajesh iPhone 13"
+  platform     String                // "ios" | "android" | "web"
+  fingerprint  String   @unique
+  lastSeenAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([userId])
+  @@map("devices")
+}
+
+// ───────────── Project ─────────────
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+model Project {
+  id           String   @id @default(cuid())
+  orgId        String
+  code         String                 // human ref e.g. "VILLA-A2"
+  name         String
+  clientName   String?
+  location     String?
+  startDate    DateTime?
+  expectedEndDate DateTime?
+  status       ProjectStatus @default(PLANNED)
+  budgetCents  BigInt?                // total approved budget in paise
+  currency     String   @default("INR")
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy    User     @relation("ProjectCreator", fields: [createdById], references: [id])
+  expenses     Expense[]
+  dprs         Dpr[]
+  materialReceipts MaterialReceipt[]
+
+  @@unique([orgId, code])
+  @@index([orgId, status])
+  @@map("projects")
+}
+
+// ───────────── Master data: Vendors ─────────────
+
+model Vendor {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  gstin       String?
+  pan         String?
+  phone       String?
+  email       String?
+  addressLine String?
+  city        String?
+  state       String?
+  pincode     String?
+  bankAccount String?
+  ifsc        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org              Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  materialReceipts MaterialReceipt[]
+
+  @@unique([orgId, gstin])
+  @@index([orgId])
+  @@map("vendors")
+}
+
+// ───────────── Master data: Materials ─────────────
+
+enum MaterialCategory {
+  CEMENT
+  STEEL
+  AGGREGATE
+  SAND
+  BRICK
+  ELECTRICAL
+  PLUMBING
+  PAINT
+  WOOD
+  TILES
+  HARDWARE
+  CONSUMABLE
+  OTHER
+}
+
+model Material {
+  id          String   @id @default(cuid())
+  orgId       String
+  sku         String                // human ref, org-unique
+  name        String
+  category    MaterialCategory
+  uom         String                // "bag", "kg", "tonne", "nos", "cft"
+  hsnCode     String?               // for future GST
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org              Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  materialReceipts MaterialReceipt[]
+
+  @@unique([orgId, sku])
+  @@index([orgId, category])
+  @@map("materials")
+}
+
+// ───────────── Capture tables (ledger-ready but NO ledger writes in Phase 0) ─────────────
+
+enum ApprovalStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  VOID
+}
+
+enum SourceType {
+  EXPENSE
+  MATERIAL_RECEIPT
+  VENDOR_BILL     // Phase 3
+  PAYMENT         // Phase 3
+  DPR             // not ledger-posted, but auditable
+}
+
+// Expense capture — field petty cash etc.
+model Expense {
+  id             String   @id @default(cuid())
+  orgId          String
+  projectId      String
+  capturedById   String                 // field user
+  purpose        String
+  category       String                 // chip value (Transport, Tools, Food…)
+  amountCents    BigInt                 // paise
+  currency       String   @default("INR")
+  vendorName     String?                // free-text vendor for small expenses
+  billPhotoKey   String?                // S3 object key
+  occurredOn     DateTime
+
+  // Approval governance
+  approvalStatus ApprovalStatus @default(DRAFT)
+  approvalId     String?        @unique  // FK to approvals row when pending
+
+  // Ledger readiness (Phase 2 fills these)
+  sourceType     SourceType     @default(EXPENSE)
+  ledgerPosted   Boolean        @default(false)
+  ledgerEntryId  String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project        Project  @relation(fields: [projectId], references: [id])
+
+  @@index([orgId, projectId])
+  @@index([orgId, approvalStatus])
+  @@map("expenses")
+}
+
+// Material receipt / GRN — no stock ledger yet, just capture
+model MaterialReceipt {
+  id             String   @id @default(cuid())
+  orgId          String
+  projectId      String
+  materialId     String
+  vendorId       String?
+  receiptNumber  String?                // from challan / invoice
+  qty            Decimal  @db.Decimal(18, 3)
+  uom            String
+  unitPriceCents BigInt?                // optional — may come later with bill
+  truckNumber    String?
+  conditionOk    Boolean  @default(true)
+  photoKey       String?                // unloading photo (mandatory at service layer)
+  receivedOn     DateTime
+
+  approvalStatus ApprovalStatus @default(DRAFT)
+  approvalId     String?        @unique
+
+  sourceType     SourceType     @default(MATERIAL_RECEIPT)
+  ledgerPosted   Boolean        @default(false)
+  ledgerEntryId  String?
+
+  capturedById   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project        Project  @relation(fields: [projectId], references: [id])
+  material       Material @relation(fields: [materialId], references: [id])
+  vendor         Vendor?  @relation(fields: [vendorId], references: [id])
+
+  @@index([orgId, projectId])
+  @@index([orgId, approvalStatus])
+  @@map("material_receipts")
+}
+
+// ───────────── DPR — Daily Progress Report ─────────────
+
+enum Weather {
+  SUNNY
+  CLOUDY
+  RAINY
+  STORMY
+}
+
+model Dpr {
+  id            String   @id @default(cuid())
+  orgId         String
+  projectId     String
+  reportDate    DateTime @db.Date       // one DPR per project per date per user
+  workNarrative String
+  activityTags  String[]                // ["slab", "curing"]
+  weather       Weather?
+  blockers      String?
+
+  labourCounts  Json                    // { "mason": { "skilled": 5, "helper": 8 }, ... }
+  photoKeys     String[]                // S3 object keys, min 2 enforced at service
+  gpsLat        Float?
+  gpsLng        Float?
+  gpsAccuracyM  Float?
+
+  // DPR is not financial but still goes through approval (PM can sign off)
+  approvalStatus ApprovalStatus @default(DRAFT)
+  approvalId     String?        @unique
+  sourceType     SourceType     @default(DPR)
+
+  capturedById   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project        Project  @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, reportDate, capturedById])
+  @@index([orgId, reportDate])
+  @@map("dprs")
+}
+
+// ───────────── Approval workflow (CTO Rule 3 — maker-checker) ─────────────
+
+enum ApprovalAction {
+  REQUESTED
+  APPROVED
+  REJECTED
+  AUTO_APPROVED   // below threshold
+  VOIDED
+}
+
+model Approval {
+  id              String   @id @default(cuid())
+  orgId           String
+
+  // Polymorphic target — entity being approved
+  targetType      SourceType
+  targetId        String
+
+  amountCents     BigInt?                 // null for non-financial (DPR)
+  currency        String   @default("INR")
+
+  // Workflow state
+  status          ApprovalStatus @default(PENDING)
+  requiredRole    Role                    // role that must approve (per matrix)
+  requestedById   String
+  approverId      String?
+  decidedAt       DateTime?
+
+  // Reason / comment (free text for approve, structured for reject)
+  comment         String?
+  rejectionReason String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  org             Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  events          ApprovalEvent[]
+
+  @@index([orgId, status])
+  @@index([orgId, targetType, targetId])
+  @@map("approvals")
+}
+
+model ApprovalEvent {
+  id          String   @id @default(cuid())
+  approvalId  String
+  action      ApprovalAction
+  actorId     String
+  actorRole   Role
+  pinVerified Boolean  @default(false)
+  comment     String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  approval    Approval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+
+  @@index([approvalId])
+  @@map("approval_events")
+}
+
+// ───────────── Audit log (every mutation) ─────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  actorId    String?
+  action     String                    // "project.created", "expense.approved" etc.
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// ───────────── Outbox (Phase 7 — sync & events; table exists, UNUSED in MVP) ─────────────
+// Kept as a forward-compatible table. Phase 0 inserts are disabled at service layer.
+
+model Outbox {
+  id          String   @id @default(cuid())
+  orgId       String
+  eventType   String
+  aggregateId String
+  payload     Json
+  createdAt   DateTime @default(now())
+  processedAt DateTime?
+
+  @@index([orgId, processedAt])
+  @@map("outbox")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// LEDGER TABLES — INTENTIONALLY OMITTED (Phase 2)
+//
+//   - journal_entry       (header)
+//   - journal_entry_line  (debit/credit lines)
+//   - account             (COA)
+//   - period              (open / soft_close / locked per §1.2 of Doc 09)
+//   - reversal_reason     (enum-backed, per §1.3)
+//
+// To be designed WITH the engaged CA and added via migration in Phase 2.
+// DO NOT add these here until CA sign-off.
+// ═════════════════════════════════════════════════════════════════════════════

@@ -109,49 +109,84 @@ Build a Google-Dominating Lead Generation Website for Decorous - a construction 
 ### Scope (user mandate — Feb 2026)
 Standalone Construction ERP + execution platform on **isolated subdomain `app.decorous.in`**. Marketing site (decorous.in, /app/frontend + /app/backend) MUST remain 100% untouched.
 
-### Stack (user-confirmed)
+### Stack (CTO-confirmed)
 - Frontend web: Next.js 14 (App Router) + TypeScript
-- Frontend mobile: React Native (Expo)
-- Backend: NestJS + TypeScript
+- Frontend mobile: React Native (Expo) — scaffolded Phase 4
+- Backend: NestJS 10 + TypeScript + Prisma
 - DB: PostgreSQL 16
-- Queue: BullMQ + Redis
+- Queue: BullMQ + Redis (Phase 3+)
 - Storage: S3 (Mumbai region)
-- Monorepo: Turborepo at `/app/erp/` (NOT yet scaffolded)
+- Monorepo: Turborepo at `/app/erp/` ✅ scaffolded Feb 2026
 - Deploy: Vercel (web) + Railway/DO (backend). NOT deployable from this Kubernetes preview.
 
-### MVP Scope (locked — Doc 07 §2)
-Only three pillars:
-1. Financial tracking (double-entry ledger + bills + P&L)
-2. Material tracking (PO → GRN → consume)
-3. DPR (daily progress report + labour + photos)
+### Phase 0 Scaffolding (COMPLETE — Feb 2026)
 
-Explicitly EXCLUDED from MVP: Gantt, AI, payroll, multi-currency, GST return filing, quotation module, client portal, IoT, BIM viewer.
+Location: `/app/erp/` (67 files, 0 node_modules, zero impact on marketing site).
+
+**API (NestJS) modules shipped:**
+- `auth` — JWT + refresh + login/signup + failed-attempt lockout
+- `orgs` — multi-tenant root
+- `users` — invite + role change + PIN setting (argon2 hashed)
+- `projects` — full CRUD (reference module)
+- `vendors` — master data CRUD
+- `materials` — master data CRUD with 13 categories
+- `dpr` — sacred module (CTO Rule 4), ≤10s entry target, 2-photo minimum, GPS capture
+- `expenses` — petty cash capture, **ledgerPosted=false always** (freeze), routed through approvals
+- `approvals` — maker-checker engine (CTO Rule 3), PIN ≥ ₹50k, role matrix, rejection reason required
+
+**Cross-cutting:**
+- `PrismaModule` singleton
+- `JwtAuthGuard` + `TenantGuard` + `@Roles(...)` RBAC
+- `AuditInterceptor` — writes `audit_logs` row on every mutation
+- Throttler 200 req/min per IP
+- Swagger at `/docs`
+
+**Web (Next.js 14 App Router):**
+- Landing page, login, dashboard shell with 7-item sidebar
+- Ledger-freeze amber banner on every dashboard screen
+- Typed `apiClient` wrapper using `@decorous/types`
+
+**Shared `@decorous/types`:** enums + DTOs consumed by api + web (and mobile when scaffolded)
+
+**`@decorous/ledger-core`:** FROZEN — empty by design, README explains why
+
+**ADRs:**
+- 001: Stack choice (NestJS/Next/RN/Postgres)
+- 002: Offline sync deferred to Phase 7
+- 003: Ledger freeze until CA sign-off
+- 004: Maker-checker from day 1
+
+**Prisma schema design:**
+- Every table has `org_id` (multi-tenant)
+- Money in `BigInt` paise, never float
+- Capture tables carry `source_type`, `source_ref`, `approval_status`, `ledger_posted`, `ledger_entry_id` — ledger-ready without ledger
+- Ledger tables (journal_entry, account, period) **intentionally omitted** — Phase 2 with CA
 
 ### Documentation Status (Phase 0 — Design)
 All 9 architecture deliverables complete in `/app/docs/erp/`:
-1. ✅ `01-system-architecture.md` — infra, DNS isolation, component diagram
-2. ✅ `02-database-schema.md` — PostgreSQL schema
-3. ✅ `03-financial-ledger-system.md` — double-entry core (governance additions in Doc 09)
-4. ✅ `04-api-design.md` — REST contract, idempotency, RBAC
-5. ✅ `05-ui-wireframes.md` — web admin + field app screens (Feb 2026)
-6. ⚠️ `06-sync-architecture.md` — full offline design; **deferred to Phase 7**, MVP is online-first (per Doc 09 §2)
-7. ✅ `07-roadmap-and-costs.md` — 6-month phased plan, team, budget bands (Feb 2026, amended by Doc 09)
-8. ✅ `08-tech-justification-and-risks.md` — stack rationale + risk matrix + DR plan (Feb 2026, bus factor upgraded by Doc 09)
-9. ✅ `09-cto-review-amendments.md` — **binding** amendments: ledger governance, offline defer, CA blocker, budget bands, 90-day internal-use rule (Feb 2026)
+1. ✅ `01-system-architecture.md`
+2. ✅ `02-database-schema.md`
+3. ✅ `03-financial-ledger-system.md` (governance additions in Doc 09)
+4. ✅ `04-api-design.md`
+5. ✅ `05-ui-wireframes.md`
+6. ⚠️ `06-sync-architecture.md` — deferred to Phase 7
+7. ✅ `07-roadmap-and-costs.md`
+8. ✅ `08-tech-justification-and-risks.md`
+9. ✅ `09-cto-review-amendments.md` — binding
 
-### Next Steps (awaiting user approval)
-- **Phase 0 pre-blocker:** identify + engage construction-savvy CA (Doc 09 §3 — owner action)
-- Phase 0 (Week 0-2): Scaffold `/app/erp/` monorepo (NestJS + Next.js + Expo), CI, Postgres, COA workshop with CA
-- Phase 1 (Month 1): Auth, orgs, projects, RBAC
-- Phase 2 (Month 2): Ledger core + **maker-checker + period lock + reason codes** (CA sign-off gate)
-- Phase 3 (Month 3): Vendor bills, materials, approvals
-- Phase 4 (Month 4): Mobile field app + online-first drafts/retry (NO full offline)
-- Phase 5 (Month 5): Beta hardening
-- Phase 6.0 (Month 6): Internal GA — Decorous-only, 90-day dogfooding (Doc 09 §6)
-- Phase 6.1+: External pilot → paid SaaS (conditional)
+### Next Steps (owner action required)
+- **PRE-PHASE-0 BLOCKER:** identify + engage construction-savvy CA (Doc 09 §3)
+- **On dev machine:** `cd /app/erp && corepack enable && pnpm install && pnpm dev`
+- **Phase 1:** Auth UX polish, org settings, project full screens, vendor/material UI
+- **Phase 2:** Ledger + CA sign-off gate
+- **Phase 3:** Vendor bills, material flow (PO+GRN), approvals matured
+- **Phase 4:** Mobile field app (Expo, online-first)
+- **Phase 5:** Beta hardening
+- **Phase 6.0:** Internal GA — Decorous 90-day dogfood
+- **Phase 6.1+:** External pilot → paid SaaS
 
-### Open Decision Points (user input needed before Phase 0)
-1. Repo: monorepo inside `/app/erp/` OR separate Git org?
+### Open Decision Points (user input still needed)
+1. Repo: stay in `/app/erp/` OR move to separate Git org?
 2. Hosting region confirmation (Mumbai preferred)
 3. DNS ownership / Cloudflare access for `app.decorous.in`
 4. **CA shortlist started?** (Doc 09 §3 — PRE-PHASE-0 BLOCKER)

@@ -1,0 +1,8 @@
+{
+  "name": "@decorous/ledger-core",
+  "version": "0.0.0-frozen",
+  "private": true,
+  "description": "FROZEN — do not edit until CA sign-off. See README.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts"
+}
