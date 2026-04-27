@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   ArrayMinSize,
@@ -24,6 +17,7 @@ import {
   Roles,
   type AuthContext,
 } from '../../common/decorators/auth.decorators';
+import { Idempotent } from '../../common/decorators/idempotent.decorator';
 import type { Weather } from '@prisma/client';
 
 const WEATHERS = { SUNNY: 'SUNNY', CLOUDY: 'CLOUDY', RAINY: 'RAINY', STORMY: 'STORMY' };
@@ -70,6 +64,7 @@ export class DprController {
 
   @Post()
   @Roles('ENGINEER', 'PM', 'OWNER', 'STOREKEEPER')
+  @Idempotent()
   createDraft(@Body() dto: CreateDprDto, @CurrentUser() user: AuthContext) {
     return this.svc.createDraft({
       orgId: user.orgId,
@@ -89,6 +84,7 @@ export class DprController {
   }
 
   @Post(':id/submit')
+  @Idempotent()
   submit(@Param('id') id: string, @CurrentUser() user: AuthContext) {
     return this.svc.submit(user.orgId, id, user.userId);
   }

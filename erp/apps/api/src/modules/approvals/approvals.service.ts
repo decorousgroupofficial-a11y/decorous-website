@@ -99,6 +99,9 @@ export class ApprovalsService {
         status: 'PENDING',
         requiredRole: required,
         requestedById: input.requestedById,
+        slaDueAt: new Date(
+          Date.now() + (required === 'OWNER' ? 48 : 24) * 3_600_000,
+        ),
       },
     });
   }

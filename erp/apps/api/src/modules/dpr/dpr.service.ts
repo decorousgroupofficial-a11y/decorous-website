@@ -28,6 +28,7 @@ export class DprService {
     return this.prisma.dpr.findMany({
       where: {
         orgId,
+        deletedAt: null,
         ...(projectId ? { projectId } : {}),
         ...(fromDate || toDate
           ? {

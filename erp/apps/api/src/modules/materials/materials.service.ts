@@ -8,7 +8,12 @@ export class MaterialsService {
 
   list(orgId: string, category?: MaterialCategory) {
     return this.prisma.material.findMany({
-      where: { orgId, isActive: true, ...(category ? { category } : {}) },
+      where: {
+        orgId,
+        isActive: true,
+        deletedAt: null,
+        ...(category ? { category } : {}),
+      },
       orderBy: { name: 'asc' },
     });
   }

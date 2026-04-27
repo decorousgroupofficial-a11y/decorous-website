@@ -7,7 +7,7 @@ export class VendorsService {
 
   list(orgId: string) {
     return this.prisma.vendor.findMany({
-      where: { orgId, isActive: true },
+      where: { orgId, isActive: true, deletedAt: null },
       orderBy: { name: 'asc' },
     });
   }

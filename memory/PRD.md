@@ -162,6 +162,31 @@ Location: `/app/erp/` (67 files, 0 node_modules, zero impact on marketing site).
 - Capture tables carry `source_type`, `source_ref`, `approval_status`, `ledger_posted`, `ledger_entry_id` — ledger-ready without ledger
 - Ledger tables (journal_entry, account, period) **intentionally omitted** — Phase 2 with CA
 
+### Phase 1 Hardening + UI (COMPLETE — Feb 2026)
+
+**5 hardening fixes (ADR 005):**
+1. ✅ Soft delete (`deletedAt` + `deletedById`) on every domain table
+2. ✅ Idempotency — `idempotency_keys` table + `@Idempotent()` decorator + interceptor; applied to DPR create/submit, Expense create/submit
+3. ✅ Uploads module — presigned S3 POST, DB stores `objectKey` only, MIME allow-list, 5 MB images / 10 MB PDFs
+4. ✅ Timezone UTC — every `DateTime` field is `@db.Timestamptz(6)`, dates are `@db.Date`; `Org.timezone` for display
+5. ✅ Approval SLA + escalation — `slaDueAt` 24h (PM) / 48h (OWNER); `EscalationService.sweep()` runs as cron; ENGINEER → PM → OWNER
+
+**Phase 1 Web UI shipped (Next.js App Router):**
+- `/signup` — create org + owner user
+- `/login` — JWT auth, lockout after 5 fails
+- `/dashboard` — overview with 4 KPI cards
+- `/dashboard/projects` — list + create dialog, budget in paise
+- `/dashboard/vendors` — list + create dialog (GSTIN, PAN, bank)
+- `/dashboard/materials` — list + create dialog (13 categories, 10 UoMs)
+- `/dashboard/dpr` — timeline list with thumbnails + status badges
+- `/dashboard/dpr/new` — **mobile-friendly 3-step entry** (project+work → labour counts with +/- buttons → photo capture); ≤10s target; idempotency key generated client-side
+- `/dashboard/expenses` — list + quick-entry dialog with chip categories + required bill photo
+- `/dashboard/approvals` — pending queue with approve/reject dialogs, PIN required ≥ ₹50k, rejection reason required
+
+**Shared UI primitives:** `Button`, `Input`, `Card`, `Badge`, `PageHeader`, `EmptyState` in `components/ui.tsx` + `cn()` / `formatPaise()` / `formatDate()` utilities.
+
+**Total file count:** 89 files in `/app/erp/`, 596K, zero node_modules in preview, marketing site untouched.
+
 ### Documentation Status (Phase 0 — Design)
 All 9 architecture deliverables complete in `/app/docs/erp/`:
 1. ✅ `01-system-architecture.md`

@@ -13,6 +13,7 @@ import {
   CurrentUser,
   type AuthContext,
 } from '../../common/decorators/auth.decorators';
+import { Idempotent } from '../../common/decorators/idempotent.decorator';
 
 class CreateExpenseDto {
   @IsString() projectId!: string;
@@ -45,6 +46,7 @@ export class ExpensesController {
   }
 
   @Post()
+  @Idempotent()
   createDraft(@Body() dto: CreateExpenseDto, @CurrentUser() user: AuthContext) {
     return this.svc.createDraft({
       orgId: user.orgId,
@@ -61,6 +63,7 @@ export class ExpensesController {
   }
 
   @Post(':id/submit')
+  @Idempotent()
   submit(@Param('id') id: string, @CurrentUser() user: AuthContext) {
     return this.svc.submit(user.orgId, id, user.userId);
   }

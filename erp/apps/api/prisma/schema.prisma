@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Decorous ERP — Prisma Schema (Phase 0 — non-ledger)
+// Decorous ERP — Prisma Schema (Phase 0 + Phase 1 hardening)
 //
 // Design principles (non-negotiable — see /app/docs/erp/09-cto-review-amendments.md):
 //   • Multi-tenant: every domain table has org_id.
@@ -7,11 +7,12 @@
 //     ledger_posted, and ledger_entry_id — Phase 2 ledger integration is a MAPPING,
 //     not a migration.
 //   • Money: INTEGER paise (amount_cents) + ISO-4217 currency. NEVER float.
-//   • Immutable audit: every mutation writes an audit_log row (via interceptor).
-//   • Approvals: every write to capture tables flows through the `approvals` table —
-//     direct writes that skip approval are refused by service guards.
-//   • Ledger freeze: NO journal_entry, NO account, NO balance tables until the
-//     engaged CA signs off governance design (Doc 09 §1).
+//   • Immutable audit: every mutation writes an audit_log row.
+//   • Approvals: every write to capture tables flows through the `approvals` table.
+//   • Soft delete everywhere: deletedAt + deletedById. Hard delete is a manual ops
+//     task gated by a 7-day cooling period (Doc 08 §B4.3).
+//   • Timestamps: ALL datetimes are @db.Timestamptz (UTC) — clients convert to local.
+//   • Idempotency: writes use idempotency_keys table to enforce exactly-once semantics.
 // ─────────────────────────────────────────────────────────────────────────────
 
 generator client {
@@ -31,18 +32,23 @@ model Org {
   slug        String   @unique
   country     String   @default("IN")
   currency    String   @default("INR")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  timezone    String   @default("Asia/Kolkata")  // display only; storage = UTC
+  createdAt   DateTime @default(now())    @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt         @db.Timestamptz(6)
+  deletedAt   DateTime?                   @db.Timestamptz(6)
+  deletedById String?
 
-  users       Membership[]
-  projects    Project[]
-  vendors     Vendor[]
-  materials   Material[]
-  expenses    Expense[]
-  dprs        Dpr[]
-  approvals   Approval[]
-  auditLogs   AuditLog[]
-  devices     Device[]
+  users            Membership[]
+  projects         Project[]
+  vendors          Vendor[]
+  materials        Material[]
+  expenses         Expense[]
+  dprs             Dpr[]
+  materialReceipts MaterialReceipt[]
+  approvals        Approval[]
+  auditLogs        AuditLog[]
+  devices          Device[]
+  idempotencyKeys  IdempotencyKey[]
 
   @@map("orgs")
 }
@@ -55,13 +61,14 @@ model User {
   phone          String?  @unique
   fullName       String
   passwordHash   String
-  pinHash        String?               // 4-digit PIN for approvals (hashed, never stored raw)
+  pinHash        String?
   isActive       Boolean  @default(true)
-  lastLoginAt    DateTime?
+  lastLoginAt    DateTime? @db.Timestamptz(6)
   failedLogins   Int      @default(0)
-  lockedUntil    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  lockedUntil    DateTime? @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt      @db.Timestamptz(6)
+  deletedAt      DateTime?                @db.Timestamptz(6)
 
   memberships    Membership[]
   devices        Device[]
@@ -84,8 +91,9 @@ model Membership {
   orgId     String
   userId    String
   role      Role
-  invitedAt DateTime @default(now())
-  acceptedAt DateTime?
+  invitedAt DateTime @default(now())  @db.Timestamptz(6)
+  acceptedAt DateTime?                @db.Timestamptz(6)
+  deletedAt DateTime?                 @db.Timestamptz(6)
 
   org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -100,12 +108,12 @@ model Device {
   id           String   @id @default(cuid())
   orgId        String
   userId       String
-  label        String                // "Rajesh iPhone 13"
-  platform     String                // "ios" | "android" | "web"
+  label        String
+  platform     String
   fingerprint  String   @unique
-  lastSeenAt   DateTime?
-  revokedAt    DateTime?
-  createdAt    DateTime @default(now())
+  lastSeenAt   DateTime? @db.Timestamptz(6)
+  revokedAt    DateTime? @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
 
   org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -128,19 +136,20 @@ enum ProjectStatus {
 model Project {
   id           String   @id @default(cuid())
   orgId        String
-  code         String                 // human ref e.g. "VILLA-A2"
+  code         String
   name         String
   clientName   String?
   location     String?
-  startDate    DateTime?
-  expectedEndDate DateTime?
+  startDate    DateTime? @db.Date
+  expectedEndDate DateTime? @db.Date
   status       ProjectStatus @default(PLANNED)
-  budgetCents  BigInt?                // total approved budget in paise
+  budgetCents  BigInt?
   currency     String   @default("INR")
   createdById  String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  deletedAt    DateTime?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt      @db.Timestamptz(6)
+  deletedAt    DateTime?                @db.Timestamptz(6)
+  deletedById  String?
 
   org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   createdBy    User     @relation("ProjectCreator", fields: [createdById], references: [id])
@@ -170,8 +179,10 @@ model Vendor {
   bankAccount String?
   ifsc        String?
   isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt      @db.Timestamptz(6)
+  deletedAt   DateTime?                @db.Timestamptz(6)
+  deletedById String?
 
   org              Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   materialReceipts MaterialReceipt[]
@@ -202,14 +213,16 @@ enum MaterialCategory {
 model Material {
   id          String   @id @default(cuid())
   orgId       String
-  sku         String                // human ref, org-unique
+  sku         String
   name        String
   category    MaterialCategory
-  uom         String                // "bag", "kg", "tonne", "nos", "cft"
-  hsnCode     String?               // for future GST
+  uom         String
+  hsnCode     String?
   isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt      @db.Timestamptz(6)
+  deletedAt   DateTime?                @db.Timestamptz(6)
+  deletedById String?
 
   org              Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   materialReceipts MaterialReceipt[]
@@ -219,7 +232,7 @@ model Material {
   @@map("materials")
 }
 
-// ───────────── Capture tables (ledger-ready but NO ledger writes in Phase 0) ─────────────
+// ───────────── Capture tables ─────────────
 
 enum ApprovalStatus {
   DRAFT
@@ -232,37 +245,35 @@ enum ApprovalStatus {
 enum SourceType {
   EXPENSE
   MATERIAL_RECEIPT
-  VENDOR_BILL     // Phase 3
-  PAYMENT         // Phase 3
-  DPR             // not ledger-posted, but auditable
+  VENDOR_BILL
+  PAYMENT
+  DPR
 }
 
-// Expense capture — field petty cash etc.
 model Expense {
   id             String   @id @default(cuid())
   orgId          String
   projectId      String
-  capturedById   String                 // field user
+  capturedById   String
   purpose        String
-  category       String                 // chip value (Transport, Tools, Food…)
-  amountCents    BigInt                 // paise
+  category       String
+  amountCents    BigInt
   currency       String   @default("INR")
-  vendorName     String?                // free-text vendor for small expenses
-  billPhotoKey   String?                // S3 object key
-  occurredOn     DateTime
+  vendorName     String?
+  billPhotoKey   String?                          // S3 object key — URL composed at read time
+  occurredOn     DateTime @db.Date
 
-  // Approval governance
   approvalStatus ApprovalStatus @default(DRAFT)
-  approvalId     String?        @unique  // FK to approvals row when pending
+  approvalId     String?        @unique
 
-  // Ledger readiness (Phase 2 fills these)
   sourceType     SourceType     @default(EXPENSE)
   ledgerPosted   Boolean        @default(false)
   ledgerEntryId  String?
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  deletedAt      DateTime?
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt      @db.Timestamptz(6)
+  deletedAt      DateTime?                @db.Timestamptz(6)
+  deletedById    String?
 
   org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project        Project  @relation(fields: [projectId], references: [id])
@@ -272,21 +283,20 @@ model Expense {
   @@map("expenses")
 }
 
-// Material receipt / GRN — no stock ledger yet, just capture
 model MaterialReceipt {
   id             String   @id @default(cuid())
   orgId          String
   projectId      String
   materialId     String
   vendorId       String?
-  receiptNumber  String?                // from challan / invoice
+  receiptNumber  String?
   qty            Decimal  @db.Decimal(18, 3)
   uom            String
-  unitPriceCents BigInt?                // optional — may come later with bill
+  unitPriceCents BigInt?
   truckNumber    String?
   conditionOk    Boolean  @default(true)
-  photoKey       String?                // unloading photo (mandatory at service layer)
-  receivedOn     DateTime
+  photoKey       String?
+  receivedOn     DateTime @db.Date
 
   approvalStatus ApprovalStatus @default(DRAFT)
   approvalId     String?        @unique
@@ -296,9 +306,10 @@ model MaterialReceipt {
   ledgerEntryId  String?
 
   capturedById   String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  deletedAt      DateTime?
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt      @db.Timestamptz(6)
+  deletedAt      DateTime?                @db.Timestamptz(6)
+  deletedById    String?
 
   org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project        Project  @relation(fields: [projectId], references: [id])
@@ -310,7 +321,7 @@ model MaterialReceipt {
   @@map("material_receipts")
 }
 
-// ───────────── DPR — Daily Progress Report ─────────────
+// ───────────── DPR ─────────────
 
 enum Weather {
   SUNNY
@@ -323,26 +334,27 @@ model Dpr {
   id            String   @id @default(cuid())
   orgId         String
   projectId     String
-  reportDate    DateTime @db.Date       // one DPR per project per date per user
+  reportDate    DateTime @db.Date
   workNarrative String
-  activityTags  String[]                // ["slab", "curing"]
+  activityTags  String[]
   weather       Weather?
   blockers      String?
 
-  labourCounts  Json                    // { "mason": { "skilled": 5, "helper": 8 }, ... }
-  photoKeys     String[]                // S3 object keys, min 2 enforced at service
+  labourCounts  Json
+  photoKeys     String[]
   gpsLat        Float?
   gpsLng        Float?
   gpsAccuracyM  Float?
 
-  // DPR is not financial but still goes through approval (PM can sign off)
   approvalStatus ApprovalStatus @default(DRAFT)
   approvalId     String?        @unique
   sourceType     SourceType     @default(DPR)
 
   capturedById   String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt      @db.Timestamptz(6)
+  deletedAt      DateTime?                @db.Timestamptz(6)
+  deletedById    String?
 
   org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project        Project  @relation(fields: [projectId], references: [id])
@@ -352,13 +364,14 @@ model Dpr {
   @@map("dprs")
 }
 
-// ───────────── Approval workflow (CTO Rule 3 — maker-checker) ─────────────
+// ───────────── Approval workflow ─────────────
 
 enum ApprovalAction {
   REQUESTED
   APPROVED
   REJECTED
-  AUTO_APPROVED   // below threshold
+  AUTO_APPROVED
+  ESCALATED
   VOIDED
 }
 
@@ -366,32 +379,35 @@ model Approval {
   id              String   @id @default(cuid())
   orgId           String
 
-  // Polymorphic target — entity being approved
   targetType      SourceType
   targetId        String
 
-  amountCents     BigInt?                 // null for non-financial (DPR)
+  amountCents     BigInt?
   currency        String   @default("INR")
 
-  // Workflow state
   status          ApprovalStatus @default(PENDING)
-  requiredRole    Role                    // role that must approve (per matrix)
+  requiredRole    Role
   requestedById   String
   approverId      String?
-  decidedAt       DateTime?
+  decidedAt       DateTime? @db.Timestamptz(6)
 
-  // Reason / comment (free text for approve, structured for reject)
+  // SLA escalation (Phase 1 hardening)
+  slaDueAt        DateTime? @db.Timestamptz(6)
+  escalatedAt     DateTime? @db.Timestamptz(6)
+  escalatedToRole Role?
+
   comment         String?
   rejectionReason String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt      @db.Timestamptz(6)
 
   org             Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   events          ApprovalEvent[]
 
   @@index([orgId, status])
   @@index([orgId, targetType, targetId])
+  @@index([orgId, slaDueAt])
   @@map("approvals")
 }
 
@@ -405,7 +421,7 @@ model ApprovalEvent {
   comment     String?
   ipAddress   String?
   userAgent   String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
 
   approval    Approval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
 
@@ -413,20 +429,20 @@ model ApprovalEvent {
   @@map("approval_events")
 }
 
-// ───────────── Audit log (every mutation) ─────────────
+// ───────────── Audit log ─────────────
 
 model AuditLog {
   id         String   @id @default(cuid())
   orgId      String
   actorId    String?
-  action     String                    // "project.created", "expense.approved" etc.
+  action     String
   entityType String
   entityId   String
   before     Json?
   after      Json?
   ipAddress  String?
   userAgent  String?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
 
   org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -435,8 +451,29 @@ model AuditLog {
   @@map("audit_logs")
 }
 
-// ───────────── Outbox (Phase 7 — sync & events; table exists, UNUSED in MVP) ─────────────
-// Kept as a forward-compatible table. Phase 0 inserts are disabled at service layer.
+// ───────────── Idempotency (Phase 1 hardening) ─────────────
+// Client supplies Idempotency-Key header on writes. We record (orgId, key) and
+// cache the 200/201 response body for safe replay.
+
+model IdempotencyKey {
+  id              String   @id @default(cuid())
+  orgId           String
+  key             String
+  userId          String
+  method          String
+  path            String
+  statusCode      Int
+  responseBody    Json?
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  org             Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, key])
+  @@index([orgId, createdAt])
+  @@map("idempotency_keys")
+}
+
+// ───────────── Outbox (Phase 7 — UNUSED in MVP) ─────────────
 
 model Outbox {
   id          String   @id @default(cuid())
@@ -444,22 +481,13 @@ model Outbox {
   eventType   String
   aggregateId String
   payload     Json
-  createdAt   DateTime @default(now())
-  processedAt DateTime?
+  createdAt   DateTime @default(now())   @db.Timestamptz(6)
+  processedAt DateTime?                  @db.Timestamptz(6)
 
   @@index([orgId, processedAt])
   @@map("outbox")
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// LEDGER TABLES — INTENTIONALLY OMITTED (Phase 2)
-//
-//   - journal_entry       (header)
-//   - journal_entry_line  (debit/credit lines)
-//   - account             (COA)
-//   - period              (open / soft_close / locked per §1.2 of Doc 09)
-//   - reversal_reason     (enum-backed, per §1.3)
-//
-// To be designed WITH the engaged CA and added via migration in Phase 2.
-// DO NOT add these here until CA sign-off.
+// LEDGER TABLES — INTENTIONALLY OMITTED (Phase 2, CA-signed)
 // ═════════════════════════════════════════════════════════════════════════════
