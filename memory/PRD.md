@@ -128,32 +128,35 @@ Only three pillars:
 Explicitly EXCLUDED from MVP: Gantt, AI, payroll, multi-currency, GST return filing, quotation module, client portal, IoT, BIM viewer.
 
 ### Documentation Status (Phase 0 — Design)
-All 8 architecture deliverables complete in `/app/docs/erp/`:
+All 9 architecture deliverables complete in `/app/docs/erp/`:
 1. ✅ `01-system-architecture.md` — infra, DNS isolation, component diagram
 2. ✅ `02-database-schema.md` — PostgreSQL schema
-3. ✅ `03-financial-ledger-system.md` — double-entry design + CA-grade rules
+3. ✅ `03-financial-ledger-system.md` — double-entry core (governance additions in Doc 09)
 4. ✅ `04-api-design.md` — REST contract, idempotency, RBAC
 5. ✅ `05-ui-wireframes.md` — web admin + field app screens (Feb 2026)
-6. ✅ `06-sync-architecture.md` — offline outbox, event bus, conflict resolution (Feb 2026)
-7. ✅ `07-roadmap-and-costs.md` — 6-month phased plan, team, ₹73 L MVP budget (Feb 2026)
-8. ✅ `08-tech-justification-and-risks.md` — stack rationale + risk matrix + DR plan (Feb 2026)
+6. ⚠️ `06-sync-architecture.md` — full offline design; **deferred to Phase 7**, MVP is online-first (per Doc 09 §2)
+7. ✅ `07-roadmap-and-costs.md` — 6-month phased plan, team, budget bands (Feb 2026, amended by Doc 09)
+8. ✅ `08-tech-justification-and-risks.md` — stack rationale + risk matrix + DR plan (Feb 2026, bus factor upgraded by Doc 09)
+9. ✅ `09-cto-review-amendments.md` — **binding** amendments: ledger governance, offline defer, CA blocker, budget bands, 90-day internal-use rule (Feb 2026)
 
 ### Next Steps (awaiting user approval)
-- Phase 0 (Week 0): Scaffold `/app/erp/` monorepo (NestJS + Next.js + Expo), CI, Postgres, COA seed
+- **Phase 0 pre-blocker:** identify + engage construction-savvy CA (Doc 09 §3 — owner action)
+- Phase 0 (Week 0-2): Scaffold `/app/erp/` monorepo (NestJS + Next.js + Expo), CI, Postgres, COA workshop with CA
 - Phase 1 (Month 1): Auth, orgs, projects, RBAC
-- Phase 2 (Month 2): Ledger core (most critical — CA sign-off gate)
+- Phase 2 (Month 2): Ledger core + **maker-checker + period lock + reason codes** (CA sign-off gate)
 - Phase 3 (Month 3): Vendor bills, materials, approvals
-- Phase 4 (Month 4): Mobile field app + sync
+- Phase 4 (Month 4): Mobile field app + online-first drafts/retry (NO full offline)
 - Phase 5 (Month 5): Beta hardening
-- Phase 6 (Month 6): GA
+- Phase 6.0 (Month 6): Internal GA — Decorous-only, 90-day dogfooding (Doc 09 §6)
+- Phase 6.1+: External pilot → paid SaaS (conditional)
 
 ### Open Decision Points (user input needed before Phase 0)
 1. Repo: monorepo inside `/app/erp/` OR separate Git org?
 2. Hosting region confirmation (Mumbai preferred)
 3. DNS ownership / Cloudflare access for `app.decorous.in`
-4. Existing CA engaged, or hire fresh?
+4. **CA shortlist started?** (Doc 09 §3 — PRE-PHASE-0 BLOCKER)
 5. Which project becomes Month-4 pilot?
-6. Budget envelope: ₹73 L full OR ₹45-50 L lean (timeline +2-3 months)?
+6. Budget band: **Lean ₹35-50 L** / **Strong ₹60-80 L (recommended)** / **Full SaaS ₹1 Cr+**?
 
 ## Credentials & IDs
 

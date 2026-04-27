@@ -414,13 +414,17 @@ We enumerate risks by **category**, score each 1-5 on **likelihood × impact**, 
 
 ### B5.1 Key developer leaves mid-project
 
-- **Likelihood:** 3 · **Impact:** 4 · **Score:** 🟥 12
+- **Likelihood:** 4 · **Impact:** 4 · **Score:** 🟥 **16** *(upgraded per Doc 09 §5 — CTO review)*
 
 **Mitigation:**
 - No solo-author modules; every critical path touched by ≥ 2 engineers
 - Detailed Architecture Decision Records (ADRs) in `/app/erp/docs/adr/`
 - Pair programming for ledger + sync code
 - Quarterly knowledge-share sessions recorded
+- **Ledger Playbook** — living doc authored in Phase 2 explaining every trigger, invariant, reversal path (required reading week-1 for every new engineer)
+- **Inline comments** enforced by linter on `packages/ledger-core/` and `apps/api/src/modules/ledger/`
+- **Ledger code review** requires ≥ 2 approvals, ≥ 1 from a 3-month+ module veteran
+- **Shadow-engineer rule** — no single engineer can be the only one shipping to the ledger module in any 6-week window
 
 ### B5.2 Scope creep from stakeholders
 

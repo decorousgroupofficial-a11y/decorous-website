@@ -36,16 +36,20 @@
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Phase 0 — Week 0 (Pre-kickoff)
+### Phase 0 — Week 0-2 (Pre-kickoff)
 
-- Finalize COA (chart of accounts) with a real CA
+> **CTO-amended (Doc 09):** CA identification is a pre-Phase-0 blocker. No ledger code until a CA is engaged. See Doc 09 §3.
+
+- **[BLOCKER] Shortlist + engage a CA** (construction-experienced, software-comfortable) — Doc 09 §3
+- Finalize COA (chart of accounts) in workshop with the engaged CA
 - Cloudflare DNS setup for `app.decorous.in` (pointer only, no traffic yet)
 - Spin up Postgres, Redis, S3 buckets in staging
 - Repo scaffolding (NestJS, Next.js, Expo) under `/app/erp/` or a new repo
 - CI pipeline (GitHub Actions → Vercel preview + Railway staging)
 - Decision: monorepo (Turborepo/Nx) vs poly-repo → **monorepo** (shared types)
+- Review **Ledger Governance Design** (Doc 09 §1 — maker-checker, period-lock, reason codes) with the CA before Phase 2
 
-**Gate:** dev can hit "hello world" on staging URL + Postgres migration runs.
+**Gate:** dev can hit "hello world" on staging URL + Postgres migration runs **+ CA engagement letter signed**.
 
 ---
 

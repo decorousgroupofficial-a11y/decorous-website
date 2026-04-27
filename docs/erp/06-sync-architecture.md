@@ -1,5 +1,8 @@
 # Decorous Construction ERP — Offline Sync & Event Architecture
 
+> ⚠️ **STATUS UPDATE (Feb 2026 CTO review):** The full offline-first implementation described in this document has been **deferred to Phase 7 (post-GA)**. MVP uses a simpler "online-first with local drafts + retry" model. See `09-cto-review-amendments.md` §2 for the revised MVP behaviour and rationale.  
+> This document remains the reference design for the Phase 7 upgrade and should not be discarded.
+
 ## Why This Document Exists
 
 Construction sites fail the "healthy internet" assumption that web apps are built on:

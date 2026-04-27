@@ -1,5 +1,7 @@
 # Decorous ERP - Financial Ledger System Design
 
+> ⚠️ **STATUS UPDATE (Feb 2026 CTO review):** This document defines the double-entry core. The governance layer (maker-checker approval workflow, period locking, reversal reason codes) is defined in `09-cto-review-amendments.md` §1 and is **mandatory** before any ledger code is written.
+
 ## Overview
 
 This is the **CORE BACKBONE** of the entire system. Every financial transaction in the construction business flows through this ledger system.
