@@ -484,7 +484,7 @@ async def get_stats():
 
 @api_router.get("/sitemap.xml")
 async def get_sitemap():
-    base_url = "https://decorous.in"
+    base_url = os.environ.get("APP_URL", "https://decorous.in").rstrip("/")
     
     # Get dynamic content
     services = await db.services.find({}, {"_id": 0, "slug": 1}).to_list(10)
