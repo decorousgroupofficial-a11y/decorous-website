@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { MapPin, Phone, ArrowRight, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import LeadForm from '@/components/forms/LeadForm';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -51,6 +52,30 @@ const CityPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path={`/cities/${city.slug}`}
+        title={`${city.service_type} in ${city.name}, Odisha | Decorous`}
+        description={`Decorous offers trusted ${city.service_type.toLowerCase()} services in ${city.name}, Odisha. Engineer-led teams, transparent BOQ, on-time delivery. Call +91 7008863329 for a free quote.`}
+        image={city.image}
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@type": "Service",
+          "name": `${city.service_type} in ${city.name}`,
+          "areaServed": {"@type": "City", "name": city.name, "containedInPlace": {"@type": "State", "name": "Odisha"}},
+          "provider": {"@id": "https://decorous.in/#business"},
+          "url": `https://decorous.in/cities/${city.slug}`,
+          ...(city.faqs && city.faqs.length > 0 ? {
+            "mainEntityOfPage": {
+              "@type": "FAQPage",
+              "mainEntity": city.faqs.map((f) => ({
+                "@type": "Question",
+                "name": f.question,
+                "acceptedAnswer": {"@type": "Answer", "text": f.answer}
+              }))
+            }
+          } : {})
+        }}
+      />
       {/* Hero */}
       <section className="relative py-20 md:py-32" data-testid="city-header">
         <div 

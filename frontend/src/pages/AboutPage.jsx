@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Award, Users, Target, Eye, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Seo from '@/components/Seo';
 
 const AboutPage = () => {
   const values = [
@@ -19,6 +20,11 @@ const AboutPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path="/about"
+        title="About Decorous — Construction Company in Bhubaneswar Since 2016 | 500+ Projects"
+        description="Decorous is a trusted construction company in Bhubaneswar with 8+ years of experience and 500+ completed projects across residential, commercial and PEB sectors in Odisha."
+      />
       {/* Page Header */}
       <section className="py-16 md:py-24 bg-[#1a365d] text-white" data-testid="about-header">
         <div className="max-w-7xl mx-auto px-4 md:px-8 text-center">

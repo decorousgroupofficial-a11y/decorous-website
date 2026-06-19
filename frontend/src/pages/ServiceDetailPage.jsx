@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowRight, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import LeadForm from '@/components/forms/LeadForm';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -51,6 +52,32 @@ const ServiceDetailPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path={`/services/${service.slug}`}
+        title={`${service.name} in Bhubaneswar, Odisha | Decorous`}
+        description={service.short_description}
+        image={service.image}
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@type": "Service",
+          "name": service.name,
+          "description": service.short_description,
+          "image": service.image,
+          "provider": { "@id": "https://decorous.in/#business" },
+          "areaServed": {"@type": "State", "name": "Odisha"},
+          "url": `https://decorous.in/services/${service.slug}`,
+          ...(service.faqs && service.faqs.length > 0 ? {
+            "mainEntityOfPage": {
+              "@type": "FAQPage",
+              "mainEntity": service.faqs.map((f) => ({
+                "@type": "Question",
+                "name": f.question,
+                "acceptedAnswer": {"@type": "Answer", "text": f.answer}
+              }))
+            }
+          } : {})
+        }}
+      />
       {/* Page Header */}
       <section className="relative py-20 md:py-32" data-testid="service-detail-header">
         <div 

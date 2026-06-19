@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Calendar, User, ArrowLeft, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import LeadForm from '@/components/forms/LeadForm';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -75,6 +76,34 @@ const BlogPostPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path={`/blog/${post.slug}`}
+        title={`${post.title} | Decorous Blog`}
+        description={post.excerpt}
+        image={post.image}
+        type="article"
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@type": "Article",
+          "headline": post.title,
+          "description": post.excerpt,
+          "image": post.image,
+          "datePublished": post.created_at,
+          "dateModified": post.updated_at || post.created_at,
+          "author": {"@type": "Organization", "name": post.author || "Decorous"},
+          "publisher": {
+            "@type": "Organization",
+            "name": "Decorous",
+            "logo": {"@type": "ImageObject", "url": "https://decorous.in/og-image.jpg"}
+          },
+          "mainEntityOfPage": {
+            "@type": "WebPage",
+            "@id": `https://decorous.in/blog/${post.slug}`
+          },
+          "articleSection": post.category,
+          "keywords": (post.tags || []).join(", ")
+        }}
+      />
       {/* Hero */}
       <section className="relative py-20 md:py-32" data-testid="blog-post-header">
         <div 

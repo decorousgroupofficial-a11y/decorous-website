@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MessageSquare, Ruler, Calculator, HardHat, CheckCircle, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Seo from '@/components/Seo';
 
 const ProcessPage = () => {
   const steps = [
@@ -80,6 +81,11 @@ const ProcessPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path="/process"
+        title="Our Construction Process — 6 Steps from Consultation to Handover | Decorous"
+        description="From free consultation to handover — Decorous's transparent 6-step construction process: design, BOQ, execution, QC, handover. Timeline & warranty covered."
+      />
       {/* Page Header */}
       <section className="py-16 md:py-24 bg-[#1a365d] text-white" data-testid="process-header">
         <div className="max-w-7xl mx-auto px-4 md:px-8 text-center">

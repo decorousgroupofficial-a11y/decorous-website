@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -76,6 +77,11 @@ const ContactPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path="/contact"
+        title="Contact Decorous — Construction Company in Bhubaneswar | +91 7008863329"
+        description="Talk to Decorous in Bhubaneswar — call +91 7008863329 or visit Plot N3/370, Nayapalli, Bhubaneswar 751015. Free consultation and BOQ for residential, commercial, interior and PEB projects."
+      />
       {/* Page Header */}
       <section className="py-16 md:py-24 bg-[#1a365d] text-white" data-testid="contact-header">
         <div className="max-w-7xl mx-auto px-4 md:px-8 text-center">
@@ -95,14 +101,14 @@ const ContactPage = () => {
               <h2 className="text-2xl font-bold text-[#1a365d] mb-6">Get In Touch</h2>
               
               <div className="space-y-6">
-                <a href="tel:7008863329" className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors" data-testid="contact-phone">
+                <a href="tel:+917008863329" className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors" data-testid="contact-phone">
                   <div className="w-12 h-12 bg-[#1a365d] text-white rounded-lg flex items-center justify-center flex-shrink-0">
                     <Phone size={20} />
                   </div>
                   <div>
                     <p className="font-semibold text-[#1a365d]">Call Us</p>
-                    <p className="text-slate-600">7008863329</p>
-                    <p className="text-sm text-slate-500">Mon-Sat, 9AM-7PM</p>
+                    <p className="text-slate-600">+91 7008863329</p>
+                    <p className="text-sm text-slate-500">Mon-Sat, 10AM-6PM</p>
                   </div>
                 </a>
 
@@ -117,16 +123,16 @@ const ContactPage = () => {
                   </div>
                 </a>
 
-                <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl">
+                <a href="https://maps.google.com/?q=7RW5%2BGP+Bhubaneswar+Odisha" target="_blank" rel="noopener noreferrer" className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
                   <div className="w-12 h-12 bg-[#1a365d] text-white rounded-lg flex items-center justify-center flex-shrink-0">
                     <MapPin size={20} />
                   </div>
                   <div>
                     <p className="font-semibold text-[#1a365d]">Visit Us</p>
-                    <p className="text-slate-600">Bhubaneswar, Odisha</p>
-                    <p className="text-sm text-slate-500">India</p>
+                    <p className="text-slate-600">Plot N3/370, Nayapalli</p>
+                    <p className="text-sm text-slate-500">Bhubaneswar, Odisha 751015</p>
                   </div>
-                </div>
+                </a>
 
                 <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl">
                   <div className="w-12 h-12 bg-[#1a365d] text-white rounded-lg flex items-center justify-center flex-shrink-0">
@@ -135,7 +141,7 @@ const ContactPage = () => {
                   <div>
                     <p className="font-semibold text-[#1a365d]">Business Hours</p>
                     <p className="text-slate-600">Monday - Saturday</p>
-                    <p className="text-sm text-slate-500">9:00 AM - 7:00 PM</p>
+                    <p className="text-sm text-slate-500">10:00 AM - 6:00 PM</p>
                   </div>
                 </div>
 
@@ -274,7 +280,7 @@ const ContactPage = () => {
           </div>
           <div className="rounded-xl overflow-hidden shadow-lg">
             <iframe
-              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d119743.53499694498!2d85.75041370000001!3d20.300889700000002!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3a1909d2d5170aa5%3A0xfc580e2b68b33fa8!2sBhubaneswar%2C%20Odisha!5e0!3m2!1sen!2sin!4v1703765432012!5m2!1sen!2sin"
+              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3744.456!2d85.81!3d20.30!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zN1JXNStHUCBCaHViYW5lc3dhciwgT2Rpc2hh!5e0!3m2!1sen!2sin!4v1703765432012!5m2!1sen!2sin"
               width="100%"
               height="450"
               style={{ border: 0 }}

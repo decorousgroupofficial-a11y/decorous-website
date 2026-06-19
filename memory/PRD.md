@@ -34,6 +34,19 @@ Active ERP lives at:
 
 ## Implemented (as of Apr 2026)
 - Marketing site (React/FastAPI/Mongo) — ✅ live
+- **SEO Phase 1** (Apr 2026):
+  - Comprehensive JSON-LD in index.html: LocalBusiness/GeneralContractor (full NAP), WebSite, ItemList of 4 Services, FAQPage with 5 questions
+  - Static crawler-visible body content (h1, NAP, services, FAQs, social links) — fixes Bing/AI engines/social unfurls
+  - `robots.txt` with explicit allow for GPTBot, PerplexityBot, ClaudeBot, Bingbot
+  - Self-hosted `/og-image.jpg` (1200×630)
+  - Canonical, robots, geo, ICBM meta tags
+- **SEO Phase 2** (Apr 2026):
+  - `react-helmet-async` integrated via `<Seo>` component (`/app/frontend/src/components/Seo.jsx`)
+  - Per-route unique title + description + canonical + OG + Twitter on all 11 public pages
+  - Per-page JSON-LD on dynamic pages (Service, City, BlogPost) — Service schema, FAQPage from DB, Article schema
+  - Real NAP on /contact: Plot N3/370 Nayapalli, +91 7008863329, Mon-Sat 10AM-6PM, Plus Code map link
+  - Hardcoded `https://decorous.in` removed from `server.py` sitemap (now reads `APP_URL` env)
+  - `.gitignore` no longer blocks `.env` (was blocking Emergent deploy)
 - ERP backend (FastAPI on Mongo) — ✅ auth, orgs, projects, vendors, materials, DPR, expenses, approvals, PIN, inline uploads
 - ERP frontend shell — ✅ dark sidebar, Overview with KPIs & quick tiles
 - **Projects page** — ✅ professional: mini-stats, search, filter pills, table with hover & status pills

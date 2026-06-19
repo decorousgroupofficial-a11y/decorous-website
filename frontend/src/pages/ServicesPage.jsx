@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Home, Building2, Palette, Warehouse, Factory } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -35,6 +36,11 @@ const ServicesPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path="/services"
+        title="Construction Services in Bhubaneswar — Residential, Commercial, Interior, PEB | Decorous"
+        description="Decorous offers residential, commercial, interior design and PEB/warehouse construction across Odisha. Engineer-led teams, transparent BOQ, on-time handover. Get a free estimate."
+      />
       {/* Page Header */}
       <section className="py-16 md:py-24 bg-[#1a365d] text-white" data-testid="services-header">
         <div className="max-w-7xl mx-auto px-4 md:px-8 text-center">

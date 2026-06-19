@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -40,6 +41,11 @@ const ProjectsPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path="/projects"
+        title="Our Projects — Recent Construction Work in Bhubaneswar & Odisha | Decorous"
+        description="Browse Decorous's portfolio of 500+ completed residential, commercial, interior and PEB projects across Bhubaneswar, Cuttack and Odisha."
+      />
       {/* Page Header */}
       <section className="py-16 md:py-24 bg-[#1a365d] text-white" data-testid="projects-header">
         <div className="max-w-7xl mx-auto px-4 md:px-8 text-center">

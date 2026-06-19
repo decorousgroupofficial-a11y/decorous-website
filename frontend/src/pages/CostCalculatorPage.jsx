@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from 'sonner';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 import { trackCostCalculation, trackLeadSubmission } from '@/utils/analytics';
 
@@ -143,6 +144,11 @@ const CostCalculatorPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path="/cost-calculator"
+        title="Construction Cost Calculator — Estimate Your House Cost in Bhubaneswar | Decorous"
+        description="Get an instant construction cost estimate for your home in Bhubaneswar and across Odisha. Enter plot size, floors and quality — see the per-sqft and total budget."
+      />
       {/* Page Header */}
       <section className="py-16 md:py-20 bg-[#1a365d] text-white" data-testid="calculator-header">
         <div className="max-w-7xl mx-auto px-4 md:px-8 text-center">

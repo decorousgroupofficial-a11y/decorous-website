@@ -1,5 +1,6 @@
 import "@/App.css";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { HelmetProvider } from "react-helmet-async";
 import { Toaster } from "@/components/ui/sonner";
 
 // Layout Components
@@ -61,7 +62,8 @@ const Layout = ({ children }) => {
 function App() {
   return (
     <div className="App">
-      <BrowserRouter>
+      <HelmetProvider>
+        <BrowserRouter>
         <Layout>
           <Routes>
             <Route path="/" element={<HomePage />} />
@@ -96,6 +98,7 @@ function App() {
         </Layout>
         <Toaster position="top-right" />
       </BrowserRouter>
+      </HelmetProvider>
     </div>
   );
 }

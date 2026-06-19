@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Phone, MessageCircle, CheckCircle, Home, Building2, Palette, Warehouse, Factory, Users, Award, Clock, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import LeadForm from '@/components/forms/LeadForm';
-import SchemaMarkup, { organizationSchema, localBusinessSchema } from '@/components/seo/SchemaMarkup';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -63,10 +63,9 @@ const HomePage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
-      {/* Schema Markup for SEO */}
-      <SchemaMarkup schema={organizationSchema} />
-      <SchemaMarkup schema={localBusinessSchema} />
-      
+      {/* Per-route SEO (head-level JSON-LD for the business lives in index.html) */}
+      <Seo path="/" />
+
       {/* Hero Section */}
       <section className="relative min-h-[90vh] flex items-center" data-testid="hero-section">
         <div 

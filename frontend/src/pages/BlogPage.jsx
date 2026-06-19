@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Calendar, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -49,6 +50,11 @@ const BlogPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path="/blog"
+        title="Construction Blog — House Building Tips, Costs & Guides in Odisha | Decorous"
+        description="Expert articles on house construction, interior design, PEB warehouses, BOQ planning, and building costs in Bhubaneswar and across Odisha."
+      />
       {/* Page Header */}
       <section className="py-16 md:py-24 bg-[#1a365d] text-white" data-testid="blog-header">
         <div className="max-w-7xl mx-auto px-4 md:px-8 text-center">

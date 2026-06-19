@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Seo from '@/components/Seo';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -36,6 +37,11 @@ const CitiesListPage = () => {
 
   return (
     <div className="pb-16 md:pb-0">
+      <Seo
+        path="/cities"
+        title="Construction Services Across Odisha — Bhubaneswar, Cuttack, Puri, Rourkela | Decorous"
+        description="Decorous delivers residential, commercial, interior and PEB construction across major cities of Odisha — Bhubaneswar, Cuttack, Puri, Khordha, Rourkela, Berhampur and Sambalpur."
+      />
       {/* Page Header */}
       <section className="py-16 md:py-24 bg-[#1a365d] text-white" data-testid="cities-header">
         <div className="max-w-7xl mx-auto px-4 md:px-8 text-center">
