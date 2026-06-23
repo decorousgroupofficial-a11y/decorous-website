@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowRight, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,11 +14,7 @@ const ServiceDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [openFaq, setOpenFaq] = useState(null);
 
-  useEffect(() => {
-    fetchService();
-  }, [slug]);
-
-  const fetchService = async () => {
+  const fetchService = useCallback(async () => {
     try {
       const response = await axios.get(`${API}/services/${slug}`);
       setService(response.data);
@@ -27,7 +23,11 @@ const ServiceDetailPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [slug]);
+
+  useEffect(() => {
+    fetchService();
+  }, [fetchService]);
 
   if (loading) {
     return (

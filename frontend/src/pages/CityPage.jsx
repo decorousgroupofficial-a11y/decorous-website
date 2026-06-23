@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { MapPin, Phone, ArrowRight, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,11 +14,7 @@ const CityPage = () => {
   const [loading, setLoading] = useState(true);
   const [openFaq, setOpenFaq] = useState(null);
 
-  useEffect(() => {
-    fetchCity();
-  }, [slug]);
-
-  const fetchCity = async () => {
+  const fetchCity = useCallback(async () => {
     try {
       const response = await axios.get(`${API}/cities/${slug}`);
       setCity(response.data);
@@ -27,7 +23,11 @@ const CityPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [slug]);
+
+  useEffect(() => {
+    fetchCity();
+  }, [fetchCity]);
 
   if (loading) {
     return (

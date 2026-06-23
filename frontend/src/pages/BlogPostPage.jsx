@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Calendar, User, ArrowLeft, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,15 +14,11 @@ const BlogPostPage = () => {
   const [relatedPosts, setRelatedPosts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchPost();
-  }, [slug]);
-
-  const fetchPost = async () => {
+  const fetchPost = useCallback(async () => {
     try {
       const response = await axios.get(`${API}/blog/${slug}`);
       setPost(response.data);
-      
+
       // Fetch related posts
       const relatedRes = await axios.get(`${API}/blog?category=${response.data.category}&limit=3`);
       setRelatedPosts(relatedRes.data.filter(p => p.slug !== slug));
@@ -31,7 +27,11 @@ const BlogPostPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [slug]);
+
+  useEffect(() => {
+    fetchPost();
+  }, [fetchPost]);
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-IN', {
