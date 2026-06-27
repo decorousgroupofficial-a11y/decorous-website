@@ -492,17 +492,23 @@ async def get_stats():
 
 @api_router.get("/sitemap.xml")
 async def get_sitemap():
-    # Always emit the canonical production hostname. The platform may inject
-    # APP_URL pointing to a preview/Emergent host — we deliberately do NOT
-    # honour it here, because the sitemap is consumed by external crawlers
-    # (Google, Bing, AI engines) and must reference decorous.in.
+    """
+    Returns the public sitemap as `application/xml`.
+
+    Hardening notes (Jun 2026 Phase-1):
+      • Hostname is hard-pinned to https://decorous.in — supervisor's
+        APP_URL override (preview hostname) is deliberately ignored so this
+        endpoint never leaks a non-canonical host into Google's index.
+      • Database failures degrade gracefully — we still emit the static
+        section (homepage + 9 fixed routes) so the response is never blank,
+        which is what triggers Search Console's "Invalid sitemap address"
+        error.
+      • Explicit Content-Type header set (defensive — FastAPI's media_type
+        is sometimes stripped by upstream proxies).
+    """
     base_url = "https://decorous.in"
-    
-    # Get dynamic content
-    services = await db.services.find({}, {"_id": 0, "slug": 1}).to_list(10)
-    cities = await db.cities.find({}, {"_id": 0, "slug": 1}).to_list(50)
-    blog_posts = await db.blog_posts.find({}, {"_id": 0, "slug": 1}).to_list(100)
-    
+
+    # Static routes are always emitted, even if MongoDB is unreachable.
     urls = [
         {"loc": base_url, "priority": "1.0", "changefreq": "weekly"},
         {"loc": f"{base_url}/about", "priority": "0.8", "changefreq": "monthly"},
@@ -513,7 +519,19 @@ async def get_sitemap():
         {"loc": f"{base_url}/cities", "priority": "0.8", "changefreq": "weekly"},
         {"loc": f"{base_url}/contact", "priority": "0.9", "changefreq": "monthly"},
         {"loc": f"{base_url}/cost-calculator", "priority": "0.9", "changefreq": "monthly"},
+        {"loc": f"{base_url}/privacy-policy", "priority": "0.3", "changefreq": "yearly"},
+        {"loc": f"{base_url}/terms-and-conditions", "priority": "0.3", "changefreq": "yearly"},
     ]
+
+    # Dynamic content — wrapped in try/except so a Mongo hiccup never produces
+    # a blank/invalid sitemap.
+    try:
+        services = await db.services.find({}, {"_id": 0, "slug": 1}).to_list(10)
+        cities = await db.cities.find({}, {"_id": 0, "slug": 1}).to_list(50)
+        blog_posts = await db.blog_posts.find({}, {"_id": 0, "slug": 1}).to_list(100)
+    except Exception as exc:  # noqa: BLE001  — bare except is intentional here
+        logger.warning("sitemap: dynamic section degraded (%s); serving static only", exc)
+        services, cities, blog_posts = [], [], []
     
     # Add service pages
     for service in services:
@@ -551,8 +569,16 @@ async def get_sitemap():
         xml_content += '  </url>\n'
     
     xml_content += '</urlset>'
-    
-    return Response(content=xml_content, media_type="application/xml")
+
+    return Response(
+        content=xml_content,
+        media_type="application/xml",
+        headers={
+            "Content-Type": "application/xml; charset=utf-8",
+            "Cache-Control": "public, max-age=3600",
+            "X-Robots-Tag": "noindex",  # the sitemap itself shouldn't be indexed
+        },
+    )
 
 # ==================== SCHEMA MARKUP ====================
 

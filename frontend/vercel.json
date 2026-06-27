@@ -5,7 +5,8 @@
   "installCommand": "npm install",
   "outputDirectory": "build",
   "rewrites": [
-    { "source": "/sitemap.xml", "destination": "https://construct-pro-139.emergent.host/api/sitemap.xml" },
+    { "source": "/sitemap.xml",        "destination": "https://construct-pro-139.emergent.host/api/sitemap.xml" },
+    { "source": "/api/sitemap.xml",    "destination": "https://construct-pro-139.emergent.host/api/sitemap.xml" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
@@ -19,6 +20,20 @@
       "source": "/og-image.jpg",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=86400" }
+      ]
+    },
+    {
+      "source": "/sitemap.xml",
+      "headers": [
+        { "key": "Content-Type", "value": "application/xml; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
+      "source": "/api/sitemap.xml",
+      "headers": [
+        { "key": "Content-Type", "value": "application/xml; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
       ]
     },
     {
