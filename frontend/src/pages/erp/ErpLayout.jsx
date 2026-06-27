@@ -1,5 +1,6 @@
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
+import { Helmet } from "react-helmet-async";
 import { erpAuth } from "@/lib/erp-api";
 import {
   LayoutDashboard, Briefcase, Users, Package, ClipboardList, Wallet,
@@ -37,6 +38,12 @@ export default function ErpLayout() {
 
   return (
     <div className="min-h-screen grid grid-cols-[260px_1fr] bg-slate-50" data-testid="erp-layout">
+      {/* ERP is an internal application — do NOT index any of its routes. */}
+      <Helmet>
+        <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+        <meta name="googlebot" content="noindex, nofollow" />
+        <title>Decorous ERP</title>
+      </Helmet>
       {/* Sidebar */}
       <aside className="bg-slate-900 text-slate-300 flex flex-col px-3 py-5 sticky top-0 h-screen">
         <div className="flex items-center gap-2 px-3 mb-8">

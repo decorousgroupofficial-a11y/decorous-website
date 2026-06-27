@@ -146,9 +146,9 @@ const Footer = () => {
               © {currentYear} Decorous. All rights reserved.
             </p>
             <div className="flex gap-6 text-sm text-white/60">
-              <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-              <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-              <a href="#" className="hover:text-white transition-colors">Sitemap</a>
+              <Link to="/privacy-policy" className="hover:text-white transition-colors" data-testid="footer-privacy">Privacy Policy</Link>
+              <Link to="/terms-and-conditions" className="hover:text-white transition-colors" data-testid="footer-terms">Terms &amp; Conditions</Link>
+              <a href="/sitemap.xml" className="hover:text-white transition-colors" data-testid="footer-sitemap">Sitemap</a>
             </div>
           </div>
         </div>

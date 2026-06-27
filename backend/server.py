@@ -27,7 +27,15 @@ db = client[os.environ['DB_NAME']]
 resend.api_key = os.environ.get('RESEND_API_KEY', '')
 NOTIFICATION_EMAIL = os.environ.get('NOTIFICATION_EMAIL', 'contact@decorous.in')
 WHATSAPP_NUMBER = os.environ.get('WHATSAPP_NUMBER', '917008863329')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+
+# Admin password is a hard-required secret. Refuse to boot without it so that
+# a misconfigured environment never silently falls back to a known default.
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
+if not ADMIN_PASSWORD or len(ADMIN_PASSWORD) < 8:
+    raise RuntimeError(
+        "ADMIN_PASSWORD environment variable is required and must be at least "
+        "8 characters. Refusing to boot with a missing or weak admin password."
+    )
 
 # Create the main app
 app = FastAPI(title="Decorous Construction API")
@@ -484,7 +492,11 @@ async def get_stats():
 
 @api_router.get("/sitemap.xml")
 async def get_sitemap():
-    base_url = os.environ.get("APP_URL", "https://decorous.in").rstrip("/")
+    # Always emit the canonical production hostname. The platform may inject
+    # APP_URL pointing to a preview/Emergent host — we deliberately do NOT
+    # honour it here, because the sitemap is consumed by external crawlers
+    # (Google, Bing, AI engines) and must reference decorous.in.
+    base_url = "https://decorous.in"
     
     # Get dynamic content
     services = await db.services.find({}, {"_id": 0, "slug": 1}).to_list(10)

@@ -23,6 +23,9 @@ import CitiesListPage from "@/pages/CitiesListPage";
 import ContactPage from "@/pages/ContactPage";
 import CostCalculatorPage from "@/pages/CostCalculatorPage";
 import AdminPage from "@/pages/AdminPage";
+import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
+import TermsPage from "@/pages/TermsPage";
+import NotFoundPage from "@/pages/NotFoundPage";
 
 // ERP pages (app.decorous.in)
 import ErpLoginPage from "@/pages/erp/ErpLoginPage";
@@ -78,6 +81,8 @@ function App() {
             <Route path="/cities/:slug" element={<CityPage />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/cost-calculator" element={<CostCalculatorPage />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            <Route path="/terms-and-conditions" element={<TermsPage />} />
             <Route path="/admin" element={<AdminPage />} />
 
             {/* ERP (app.decorous.in) */}
@@ -94,6 +99,9 @@ function App() {
               <Route path="approvals" element={<ErpApprovalsPage />} />
               <Route path="settings" element={<ErpSettingsPage />} />
             </Route>
+
+            {/* Catch-all 404 — branded, noindexed, keeps Header/Footer intact */}
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Layout>
         <Toaster position="top-right" />

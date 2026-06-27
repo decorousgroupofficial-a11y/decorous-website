@@ -5,6 +5,7 @@
   "installCommand": "npm install",
   "outputDirectory": "build",
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "https://construct-pro-139.emergent.host/api/sitemap.xml" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

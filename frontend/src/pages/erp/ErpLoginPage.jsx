@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,11 @@ export default function ErpLoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+      <Helmet>
+        <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+        <meta name="googlebot" content="noindex, nofollow" />
+        <title>Decorous ERP — Login</title>
+      </Helmet>
       <Card className="w-full max-w-sm p-8">
         <p className="text-xs uppercase tracking-widest text-blue-700 font-semibold">
           Decorous ERP

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { Users, Phone, Mail, MapPin, Calendar, Filter, Trash2, MessageCircle, CheckCircle, Clock, XCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,16 @@ import { toast } from 'sonner';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+// Renders the noindex/nofollow head tag for every admin/ERP-style internal page.
+// robots.txt is advisory; this is enforced at the page level so misbehaving crawlers
+// that ignore robots.txt still see "do not index" on the rendered HTML.
+const NoIndexHelmet = () => (
+  <Helmet>
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+    <meta name="googlebot" content="noindex, nofollow" />
+  </Helmet>
+);
 
 const AdminPage = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -131,6 +142,7 @@ const AdminPage = () => {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <NoIndexHelmet />
         <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full">
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-[#1a365d] text-white rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -173,6 +185,7 @@ const AdminPage = () => {
   // Dashboard
   return (
     <div className="min-h-screen bg-slate-50" data-testid="admin-dashboard">
+      <NoIndexHelmet />
       {/* Header */}
       <div className="bg-[#1a365d] text-white py-4 px-4 md:px-8">
         <div className="max-w-7xl mx-auto flex items-center justify-between">

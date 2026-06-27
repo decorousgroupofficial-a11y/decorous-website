@@ -35,7 +35,14 @@ load_dotenv(Path(__file__).parent / '.env')
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
-JWT_SECRET = os.environ.get("ERP_JWT_SECRET", "change-me-in-production-min-32-chars")
+# JWT secret is mandatory — fail fast if missing or trivially short. Falling
+# back to a known default would let anyone forge ERP tokens in production.
+JWT_SECRET = os.environ.get("ERP_JWT_SECRET")
+if not JWT_SECRET or len(JWT_SECRET) < 32:
+    raise RuntimeError(
+        "ERP_JWT_SECRET environment variable is required and must be at least "
+        "32 characters. Refusing to boot ERP routes with a missing or weak secret."
+    )
 JWT_ALGO = "HS256"
 JWT_EXPIRES_MIN = 60 * 24  # 24h — long for convenience; refresh token pattern deferred
 

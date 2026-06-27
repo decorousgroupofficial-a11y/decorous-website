@@ -71,8 +71,9 @@ const AboutPage = () => {
             <div className="relative">
               <img 
                 src="https://images.unsplash.com/photo-1628146023674-ede6049609b1?q=85&w=600&auto=format&fit=crop"
-                alt="Decorous Team"
+                alt="Decorous engineering team reviewing construction plans at site office in Bhubaneswar"
                 className="rounded-xl shadow-lg"
+                loading="lazy"
               />
               <div className="absolute -bottom-6 -left-6 bg-[#F5A623] text-black p-6 rounded-xl shadow-lg">
                 <p className="text-4xl font-bold">8+</p>
@@ -161,8 +162,9 @@ const AboutPage = () => {
             <div>
               <img 
                 src="https://images.unsplash.com/photo-1632516160994-b4463d4e19d2?q=85&w=600&auto=format&fit=crop"
-                alt="Construction site"
+                alt="Decorous construction site in Odisha — quality controlled residential build in progress"
                 className="rounded-xl shadow-lg"
+                loading="lazy"
               />
             </div>
           </div>
