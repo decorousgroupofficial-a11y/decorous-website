@@ -507,68 +507,91 @@ async def get_sitemap():
         is sometimes stripped by upstream proxies).
     """
     base_url = "https://decorous.in"
+    today = datetime.now(timezone.utc).date().isoformat()  # yyyy-mm-dd
 
     # Static routes are always emitted, even if MongoDB is unreachable.
     urls = [
-        {"loc": base_url, "priority": "1.0", "changefreq": "weekly"},
-        {"loc": f"{base_url}/about", "priority": "0.8", "changefreq": "monthly"},
-        {"loc": f"{base_url}/services", "priority": "0.9", "changefreq": "weekly"},
-        {"loc": f"{base_url}/projects", "priority": "0.8", "changefreq": "weekly"},
-        {"loc": f"{base_url}/process", "priority": "0.7", "changefreq": "monthly"},
-        {"loc": f"{base_url}/blog", "priority": "0.8", "changefreq": "daily"},
-        {"loc": f"{base_url}/cities", "priority": "0.8", "changefreq": "weekly"},
-        {"loc": f"{base_url}/contact", "priority": "0.9", "changefreq": "monthly"},
-        {"loc": f"{base_url}/cost-calculator", "priority": "0.9", "changefreq": "monthly"},
-        {"loc": f"{base_url}/privacy-policy", "priority": "0.3", "changefreq": "yearly"},
-        {"loc": f"{base_url}/terms-and-conditions", "priority": "0.3", "changefreq": "yearly"},
+        {"loc": base_url, "priority": "1.0", "changefreq": "weekly", "lastmod": today},
+        {"loc": f"{base_url}/about", "priority": "0.8", "changefreq": "monthly", "lastmod": today},
+        {"loc": f"{base_url}/services", "priority": "0.9", "changefreq": "weekly", "lastmod": today},
+        {"loc": f"{base_url}/projects", "priority": "0.8", "changefreq": "weekly", "lastmod": today},
+        {"loc": f"{base_url}/process", "priority": "0.7", "changefreq": "monthly", "lastmod": today},
+        {"loc": f"{base_url}/blog", "priority": "0.8", "changefreq": "daily", "lastmod": today},
+        {"loc": f"{base_url}/cities", "priority": "0.8", "changefreq": "weekly", "lastmod": today},
+        {"loc": f"{base_url}/contact", "priority": "0.9", "changefreq": "monthly", "lastmod": today},
+        {"loc": f"{base_url}/cost-calculator", "priority": "0.9", "changefreq": "monthly", "lastmod": today},
+        {"loc": f"{base_url}/privacy-policy", "priority": "0.3", "changefreq": "yearly", "lastmod": today},
+        {"loc": f"{base_url}/terms-and-conditions", "priority": "0.3", "changefreq": "yearly", "lastmod": today},
     ]
 
     # Dynamic content — wrapped in try/except so a Mongo hiccup never produces
-    # a blank/invalid sitemap.
+    # a blank/invalid sitemap. Also fetch `updated_at` so each URL has a
+    # meaningful <lastmod>.
     try:
-        services = await db.services.find({}, {"_id": 0, "slug": 1}).to_list(10)
-        cities = await db.cities.find({}, {"_id": 0, "slug": 1}).to_list(50)
-        blog_posts = await db.blog_posts.find({}, {"_id": 0, "slug": 1}).to_list(100)
+        services = await db.services.find(
+            {}, {"_id": 0, "slug": 1, "updated_at": 1}
+        ).to_list(10)
+        cities = await db.cities.find(
+            {}, {"_id": 0, "slug": 1, "updated_at": 1}
+        ).to_list(50)
+        blog_posts = await db.blog_posts.find(
+            {}, {"_id": 0, "slug": 1, "updated_at": 1, "created_at": 1}
+        ).to_list(100)
     except Exception as exc:  # noqa: BLE001  — bare except is intentional here
         logger.warning("sitemap: dynamic section degraded (%s); serving static only", exc)
         services, cities, blog_posts = [], [], []
-    
+
+    def _lastmod(doc: dict) -> str:
+        """Extract a yyyy-mm-dd string from a Mongo doc, falling back to today."""
+        val = doc.get("updated_at") or doc.get("created_at")
+        if isinstance(val, datetime):
+            return val.date().isoformat()
+        if isinstance(val, str) and len(val) >= 10:
+            return val[:10]
+        return today
+
     # Add service pages
     for service in services:
         urls.append({
             "loc": f"{base_url}/services/{service['slug']}",
             "priority": "0.8",
-            "changefreq": "monthly"
+            "changefreq": "monthly",
+            "lastmod": _lastmod(service),
         })
-    
+
     # Add city pages
     for city in cities:
         urls.append({
             "loc": f"{base_url}/cities/{city['slug']}",
             "priority": "0.8",
-            "changefreq": "monthly"
+            "changefreq": "monthly",
+            "lastmod": _lastmod(city),
         })
-    
+
     # Add blog posts
     for post in blog_posts:
         urls.append({
             "loc": f"{base_url}/blog/{post['slug']}",
             "priority": "0.6",
-            "changefreq": "monthly"
+            "changefreq": "monthly",
+            "lastmod": _lastmod(post),
         })
-    
-    # Generate XML
+
+    # Generate XML — escape < > & in <loc> defensively, though our slugs
+    # should already be URL-safe.
+    from xml.sax.saxutils import escape as _xml_escape
     xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n'
     xml_content += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-    
+
     for url in urls:
         xml_content += '  <url>\n'
-        xml_content += f'    <loc>{url["loc"]}</loc>\n'
+        xml_content += f'    <loc>{_xml_escape(url["loc"])}</loc>\n'
+        xml_content += f'    <lastmod>{url["lastmod"]}</lastmod>\n'
         xml_content += f'    <changefreq>{url["changefreq"]}</changefreq>\n'
         xml_content += f'    <priority>{url["priority"]}</priority>\n'
         xml_content += '  </url>\n'
-    
-    xml_content += '</urlset>'
+
+    xml_content += '</urlset>\n'
 
     return Response(
         content=xml_content,
