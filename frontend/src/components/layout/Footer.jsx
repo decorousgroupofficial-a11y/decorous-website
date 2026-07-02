@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Phone, Mail, MapPin, Facebook, Instagram, Linkedin, Youtube } from 'lucide-react';
 
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_construct-pro-139/artifacts/yeay7w37_Silton_Associates__2_-removebg-preview.png";
+const LOGO_URL = "/logo.png";
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();

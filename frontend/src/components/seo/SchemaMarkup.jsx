@@ -34,7 +34,7 @@ export const organizationSchema = {
   "name": "Decorous",
   "description": "Leading construction company in Odisha offering residential, commercial, interior design, warehouse, and PEB construction services.",
   "url": "https://decorous.in",
-  "logo": "https://customer-assets.emergentagent.com/job_construct-pro-139/artifacts/yeay7w37_Silton_Associates__2_-removebg-preview.png",
+  "logo": "https://decorous.in/logo.png",
   "telephone": "+917008863329",
   "email": "contact@decorous.in",
   "address": {
@@ -79,7 +79,7 @@ export const localBusinessSchema = {
   "@type": "LocalBusiness",
   "@id": "https://decorous.in/#business",
   "name": "Decorous - Construction Company Bhubaneswar",
-  "image": "https://customer-assets.emergentagent.com/job_construct-pro-139/artifacts/yeay7w37_Silton_Associates__2_-removebg-preview.png",
+  "image": "https://decorous.in/logo.png",
   "telephone": "+917008863329",
   "email": "contact@decorous.in",
   "address": {
@@ -143,7 +143,7 @@ export const generateArticleSchema = (post) => ({
     "name": "Decorous",
     "logo": {
       "@type": "ImageObject",
-      "url": "https://customer-assets.emergentagent.com/job_construct-pro-139/artifacts/yeay7w37_Silton_Associates__2_-removebg-preview.png"
+      "url": "https://decorous.in/logo.png"
     }
   },
   "datePublished": post.created_at,

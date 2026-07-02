@@ -613,7 +613,7 @@ async def get_organization_schema():
         "name": "Decorous",
         "description": "Leading construction company in Odisha offering residential, commercial, interior design, warehouse, and PEB construction services.",
         "url": "https://decorous.in",
-        "logo": "https://customer-assets.emergentagent.com/job_construct-pro-139/artifacts/yeay7w37_Silton_Associates__2_-removebg-preview.png",
+        "logo": "https://decorous.in/logo.png",
         "telephone": "+917008863329",
         "email": "contact@decorous.in",
         "address": {
@@ -659,7 +659,7 @@ async def get_local_business_schema():
         "@type": "LocalBusiness",
         "@id": "https://decorous.in/#business",
         "name": "Decorous - Construction Company Bhubaneswar",
-        "image": "https://customer-assets.emergentagent.com/job_construct-pro-139/artifacts/yeay7w37_Silton_Associates__2_-removebg-preview.png",
+        "image": "https://decorous.in/logo.png",
         "telephone": "+917008863329",
         "email": "contact@decorous.in",
         "address": {

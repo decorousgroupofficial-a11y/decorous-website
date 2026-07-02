@@ -11,7 +11,7 @@ import {
   NavigationMenuTrigger,
 } from "@/components/ui/navigation-menu";
 
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_construct-pro-139/artifacts/yeay7w37_Silton_Associates__2_-removebg-preview.png";
+const LOGO_URL = "/logo.png";
 
 const services = [
   { name: 'Residential Construction', slug: 'residential-construction' },
