@@ -15,6 +15,8 @@ Design principles (kept from the NestJS reference — /app/erp/):
 """
 from __future__ import annotations
 
+import base64
+import io
 import os
 import secrets
 from datetime import datetime, timezone, timedelta, date
@@ -27,6 +29,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from motor.motor_asyncio import AsyncIOMotorClient
+from PIL import Image
 from pydantic import BaseModel, Field, EmailStr
 
 from pathlib import Path
@@ -949,25 +952,70 @@ class InlineUploadIn(BaseModel):
 # resizing that typically lands around 120-250 KB.
 INLINE_MAX_BYTES = 900_000
 
+# Upper bound on the *raw* upload before we even attempt to decode/re-encode
+# it — rejects absurd payloads early instead of handing them to Pillow.
+INLINE_RAW_MAX_BYTES = 15 * 1024 * 1024
+
+# Server-side optimization is authoritative: every image gets re-encoded to
+# WebP here regardless of what the client sent, so a bypassed/absent
+# client-side compression step (a different caller, a buggy build, etc.)
+# never results in an oversized or non-optimized image being stored.
+IMAGE_MAX_DIM = 1600
+IMAGE_WEBP_QUALITY = 80
+
+
+def _optimize_image(raw: bytes) -> tuple[bytes, str]:
+    """Resize + re-encode an image to WebP. Raises ValueError if unparseable."""
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+    except Exception as exc:
+        raise ValueError(f"Not a valid image: {exc}") from exc
+
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGBA" if "A" in img.mode or img.mode == "P" else "RGB")
+
+    ratio = min(1.0, IMAGE_MAX_DIM / max(img.width, img.height))
+    if ratio < 1.0:
+        img = img.resize((round(img.width * ratio), round(img.height * ratio)), Image.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP", quality=IMAGE_WEBP_QUALITY, method=6)
+    return buf.getvalue(), "image/webp"
+
 
 @router.post("/uploads/inline")
 async def inline_upload(dto: InlineUploadIn, ctx: AuthCtx = Depends(get_ctx)):
-    # rough size estimate from base64 length
-    approx_bytes = (len(dto.data_base64) * 3) // 4
-    if approx_bytes > INLINE_MAX_BYTES:
-        raise HTTPException(400, f"Image too large (>{INLINE_MAX_BYTES // 1000} KB). Resize on device.")
+    # rough size estimate from base64 length, checked before touching Pillow
+    approx_raw_bytes = (len(dto.data_base64) * 3) // 4
+    if approx_raw_bytes > INLINE_RAW_MAX_BYTES:
+        raise HTTPException(400, f"Upload too large (>{INLINE_RAW_MAX_BYTES // (1024*1024)} MB).")
+
+    raw = base64.b64decode(dto.data_base64)
+    content_type = dto.content_type
+    if content_type.startswith("image/"):
+        try:
+            raw, content_type = _optimize_image(raw)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    final_bytes = len(raw)
+    if final_bytes > INLINE_MAX_BYTES:
+        raise HTTPException(400, f"Image too large (>{INLINE_MAX_BYTES // 1000} KB) even after optimization.")
+
+    data_base64 = base64.b64encode(raw).decode("ascii")
     key = f"{ctx.org_id}/{dto.kind}/{_uid()}"
     await col_uploads.insert_one({
         "_id": key,
         "org_id": ctx.org_id,
         "kind": dto.kind,
-        "content_type": dto.content_type,
-        "data_base64": dto.data_base64,
-        "bytes": approx_bytes,
+        "content_type": content_type,
+        "data_base64": data_base64,
+        "bytes": final_bytes,
         "uploaded_by_id": ctx.user_id,
         "created_at": _now(),
     })
-    return {"object_key": key, "bytes": approx_bytes}
+    return {"object_key": key, "bytes": final_bytes, "content_type": content_type}
 
 
 @router.get("/uploads/{object_key:path}")
