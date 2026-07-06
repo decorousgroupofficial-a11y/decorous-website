@@ -282,40 +282,6 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
 async def root():
     return {"message": "Decorous Construction API", "status": "active"}
 
-# TEMPORARY one-time content seed — the new Atlas database was never
-# populated with the site's services/cities/testimonials/projects/blog
-# content after the Emergent -> Render migration. Admin-gated since it
-# clears and re-inserts those collections. Remove once run.
-@api_router.get("/admin/seed-content")
-async def admin_seed_content(admin: str = Depends(verify_admin)):
-    from seed_data import (
-        services_data, cities_data, testimonials_data, projects_data, blog_posts_data,
-    )
-    now = datetime.now(timezone.utc)
-    for doc in services_data + cities_data + testimonials_data + projects_data + blog_posts_data:
-        doc.setdefault("created_at", now)
-        doc.setdefault("updated_at", now)
-
-    await db.services.delete_many({})
-    await db.cities.delete_many({})
-    await db.testimonials.delete_many({})
-    await db.projects.delete_many({})
-    await db.blog_posts.delete_many({})
-
-    await db.services.insert_many(services_data)
-    await db.cities.insert_many(cities_data)
-    await db.testimonials.insert_many(testimonials_data)
-    await db.projects.insert_many(projects_data)
-    await db.blog_posts.insert_many(blog_posts_data)
-
-    return {
-        "services": len(services_data),
-        "cities": len(cities_data),
-        "testimonials": len(testimonials_data),
-        "projects": len(projects_data),
-        "blog_posts": len(blog_posts_data),
-    }
-
 # Lead Routes
 @api_router.post("/leads", response_model=Lead)
 async def create_lead(input: LeadBase):
