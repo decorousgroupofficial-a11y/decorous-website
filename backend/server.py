@@ -282,26 +282,6 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
 async def root():
     return {"message": "Decorous Construction API", "status": "active"}
 
-# TEMPORARY diagnostic for the Atlas TLS handshake failure — remove once resolved.
-@api_router.get("/debug/db-check")
-async def debug_db_check():
-    import pymongo, ssl
-    result = {"pymongo_version": pymongo.version, "openssl_version": ssl.OPENSSL_VERSION}
-    mongo_url = os.environ["MONGO_URL"]
-    try:
-        await db.command("ping")
-        result["plain_connection"] = "SUCCESS"
-    except Exception as e:
-        result["plain_connection"] = f"FAILED: {type(e).__name__}: {str(e)[:300]}"
-    try:
-        insecure_client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=8000, tls=True, tlsInsecure=True)
-        await insecure_client.admin.command("ping")
-        result["tls_insecure_connection"] = "SUCCESS"
-        insecure_client.close()
-    except Exception as e:
-        result["tls_insecure_connection"] = f"FAILED: {type(e).__name__}: {str(e)[:300]}"
-    return result
-
 # Lead Routes
 @api_router.post("/leads", response_model=Lead)
 async def create_lead(input: LeadBase):
