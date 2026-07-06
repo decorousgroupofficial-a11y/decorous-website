@@ -3,6 +3,7 @@ Seed script for Decorous Construction website
 Run with: python seed_data.py
 """
 import asyncio
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 from dotenv import load_dotenv
@@ -1302,34 +1303,43 @@ blog_posts_data = [
 async def seed_database():
     """Seed the database with initial data"""
     print("Starting database seeding...")
-    
+
+    # Stamp real timestamps at seed time so the sitemap's <lastmod> reflects
+    # when content actually entered the DB, instead of silently defaulting
+    # to "today" (which would make every page look freshly changed on
+    # every single sitemap request).
+    now = datetime.now(timezone.utc)
+    for doc in services_data + cities_data + testimonials_data + projects_data + blog_posts_data:
+        doc.setdefault("created_at", now)
+        doc.setdefault("updated_at", now)
+
     # Clear existing data
     await db.services.delete_many({})
     await db.cities.delete_many({})
     await db.testimonials.delete_many({})
     await db.projects.delete_many({})
     await db.blog_posts.delete_many({})
-    
+
     # Insert services
     await db.services.insert_many(services_data)
     print(f"Inserted {len(services_data)} services")
-    
+
     # Insert cities
     await db.cities.insert_many(cities_data)
     print(f"Inserted {len(cities_data)} cities")
-    
+
     # Insert testimonials
     await db.testimonials.insert_many(testimonials_data)
     print(f"Inserted {len(testimonials_data)} testimonials")
-    
+
     # Insert projects
     await db.projects.insert_many(projects_data)
     print(f"Inserted {len(projects_data)} projects")
-    
+
     # Insert blog posts
     await db.blog_posts.insert_many(blog_posts_data)
     print(f"Inserted {len(blog_posts_data)} blog posts")
-    
+
     print("Database seeding completed!")
 
 if __name__ == "__main__":
