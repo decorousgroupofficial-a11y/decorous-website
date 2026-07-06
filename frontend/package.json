@@ -57,6 +57,7 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
+    "postbuild": "node scripts/prerender-seo.js",
     "test": "craco test"
   },
   "browserslist": {
