@@ -89,6 +89,7 @@ class Project(BaseModel):
     description: str
     images: List[str]
     featured: bool = False
+    is_placeholder: bool = False
 
 class BlogPost(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -141,6 +142,7 @@ class Testimonial(BaseModel):
     rating: int
     content: str
     image: Optional[str] = None
+    is_placeholder: bool = False
 
 # ==================== ADMIN CONTENT MANAGEMENT ====================
 # Input models for the admin projects/testimonials editor. Separate from
@@ -427,6 +429,9 @@ async def update_project(project_id: str, input: ProjectUpdate, admin: str = Dep
     updates = {k: v for k, v in input.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
+    # Any admin edit means the entry now has real content, even if it started
+    # life as seeded placeholder data with the same id.
+    updates["is_placeholder"] = False
     result = await db.projects.update_one({"id": project_id}, {"$set": updates})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -508,11 +513,36 @@ async def update_testimonial(testimonial_id: str, input: TestimonialUpdate, admi
     updates = {k: v for k, v in input.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
+    # Any admin edit means the entry now has real content, even if it started
+    # life as seeded placeholder data with the same id.
+    updates["is_placeholder"] = False
     result = await db.testimonials.update_one({"id": testimonial_id}, {"$set": updates})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Testimonial not found")
     testimonial = await db.testimonials.find_one({"id": testimonial_id}, {"_id": 0})
     return testimonial
+
+@api_router.post("/admin/_migrate_placeholder_flags")
+async def _migrate_placeholder_flags():
+    """One-time migration: the is_placeholder field didn't exist when the
+    original seed data was inserted. Backfill it on the 6 seed projects /
+    5 seed testimonials, treating any that already have a real uploaded
+    photo (edited via the admin before this field existed) as real content.
+    Remove this endpoint once run in production."""
+    seed_project_ids = ["proj-1", "proj-2", "proj-3", "proj-4", "proj-5", "proj-6"]
+    seed_testimonial_ids = ["test-1", "test-2", "test-3", "test-4", "test-5"]
+
+    updated = {"projects": [], "testimonials": []}
+    async for doc in db.projects.find({"id": {"$in": seed_project_ids}}, {"_id": 0}):
+        has_real_photo = any("/api/uploads/" in img for img in doc.get("images", []))
+        await db.projects.update_one({"id": doc["id"]}, {"$set": {"is_placeholder": not has_real_photo}})
+        updated["projects"].append({"id": doc["id"], "is_placeholder": not has_real_photo})
+
+    async for doc in db.testimonials.find({"id": {"$in": seed_testimonial_ids}}, {"_id": 0}):
+        await db.testimonials.update_one({"id": doc["id"]}, {"$set": {"is_placeholder": True}})
+        updated["testimonials"].append({"id": doc["id"], "is_placeholder": True})
+
+    return updated
 
 @api_router.delete("/admin/testimonials/{testimonial_id}")
 async def delete_testimonial(testimonial_id: str, admin: str = Depends(verify_admin)):

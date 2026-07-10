@@ -437,6 +437,12 @@ testimonials_data = [
     }
 ]
 
+# Marks this as demo content from the original site template, not a real
+# client testimonial. The homepage hides is_placeholder entries; admin edits
+# clear the flag automatically since editing means it's real content now.
+for _t in testimonials_data:
+    _t["is_placeholder"] = True
+
 # Projects Data
 projects_data = [
     {
@@ -506,6 +512,12 @@ projects_data = [
         "featured": False
     }
 ]
+
+# Marks this as demo content from the original site template (stock photos,
+# not a real completed project). The homepage hides is_placeholder entries;
+# admin edits clear the flag automatically since editing means it's real now.
+for _p in projects_data:
+    _p["is_placeholder"] = True
 
 # Blog Posts Data
 blog_posts_data = [

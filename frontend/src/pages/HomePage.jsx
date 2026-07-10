@@ -19,14 +19,6 @@ const serviceIcons = {
   'Factory': Factory
 };
 
-// These ids match the placeholder demo content seeded from the original
-// site template (fake client names, stock photos) — not real testimonials
-// or completed projects. Once real ones are added to the database (with
-// different ids), they'll appear here automatically and these placeholder
-// ids simply won't match anymore.
-const PLACEHOLDER_TESTIMONIAL_IDS = new Set(['test-1', 'test-2', 'test-3', 'test-4', 'test-5']);
-const PLACEHOLDER_PROJECT_IDS = new Set(['proj-1', 'proj-2', 'proj-3', 'proj-4', 'proj-5', 'proj-6']);
-
 const SERVICE_AREAS = ['Bhubaneswar', 'Cuttack', 'Puri', 'Khordha'];
 
 const HomePage = () => {
@@ -71,8 +63,8 @@ const HomePage = () => {
     { step: 6, title: 'Project Handover', description: 'Complete documentation and warranty' },
   ];
 
-  const realProjects = projects.filter((p) => !PLACEHOLDER_PROJECT_IDS.has(p.id));
-  const realTestimonials = testimonials.filter((t) => !PLACEHOLDER_TESTIMONIAL_IDS.has(t.id));
+  const realProjects = projects.filter((p) => !p.is_placeholder);
+  const realTestimonials = testimonials.filter((t) => !t.is_placeholder);
 
   return (
     <div className="pb-16 md:pb-0">
