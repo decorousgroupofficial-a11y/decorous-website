@@ -3,9 +3,12 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import base64
+import io
 import os
 import logging
 from pathlib import Path
+from PIL import Image
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
@@ -138,6 +141,51 @@ class Testimonial(BaseModel):
     rating: int
     content: str
     image: Optional[str] = None
+
+# ==================== ADMIN CONTENT MANAGEMENT ====================
+# Input models for the admin projects/testimonials editor. Separate from
+# Project/Testimonial (the public read models) so the public GET endpoints'
+# response shape never has to change.
+
+class ProjectCreate(BaseModel):
+    title: str
+    category: str
+    location: str
+    area_sqft: int
+    completion_time: str
+    description: str
+    images: List[str]
+    featured: bool = False
+
+class ProjectUpdate(BaseModel):
+    title: Optional[str] = None
+    category: Optional[str] = None
+    location: Optional[str] = None
+    area_sqft: Optional[int] = None
+    completion_time: Optional[str] = None
+    description: Optional[str] = None
+    images: Optional[List[str]] = None
+    featured: Optional[bool] = None
+
+class TestimonialCreate(BaseModel):
+    name: str
+    location: str
+    project_type: str
+    rating: int
+    content: str
+    image: Optional[str] = None
+
+class TestimonialUpdate(BaseModel):
+    name: Optional[str] = None
+    location: Optional[str] = None
+    project_type: Optional[str] = None
+    rating: Optional[int] = None
+    content: Optional[str] = None
+    image: Optional[str] = None
+
+class ImageUploadIn(BaseModel):
+    content_type: str = Field(default="image/jpeg")
+    data_base64: str  # base64 without the "data:...;base64," prefix
 
 class CostEstimate(BaseModel):
     plot_size: int
@@ -368,6 +416,30 @@ async def get_project(project_id: str):
         raise HTTPException(status_code=404, detail="Project not found")
     return project
 
+@api_router.post("/admin/projects", response_model=Project)
+async def create_project(input: ProjectCreate, admin: str = Depends(verify_admin)):
+    project = Project(**input.model_dump())
+    await db.projects.insert_one(project.model_dump())
+    return project
+
+@api_router.put("/admin/projects/{project_id}", response_model=Project)
+async def update_project(project_id: str, input: ProjectUpdate, admin: str = Depends(verify_admin)):
+    updates = {k: v for k, v in input.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    result = await db.projects.update_one({"id": project_id}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    return project
+
+@api_router.delete("/admin/projects/{project_id}")
+async def delete_project(project_id: str, admin: str = Depends(verify_admin)):
+    result = await db.projects.delete_one({"id": project_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"status": "success", "deleted": project_id}
+
 # Blog Routes
 @api_router.get("/blog", response_model=List[BlogPost])
 async def get_blog_posts(
@@ -424,6 +496,91 @@ async def get_city(slug: str):
 async def get_testimonials():
     testimonials = await db.testimonials.find({}, {"_id": 0}).to_list(50)
     return testimonials
+
+@api_router.post("/admin/testimonials", response_model=Testimonial)
+async def create_testimonial(input: TestimonialCreate, admin: str = Depends(verify_admin)):
+    testimonial = Testimonial(**input.model_dump())
+    await db.testimonials.insert_one(testimonial.model_dump())
+    return testimonial
+
+@api_router.put("/admin/testimonials/{testimonial_id}", response_model=Testimonial)
+async def update_testimonial(testimonial_id: str, input: TestimonialUpdate, admin: str = Depends(verify_admin)):
+    updates = {k: v for k, v in input.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    result = await db.testimonials.update_one({"id": testimonial_id}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Testimonial not found")
+    testimonial = await db.testimonials.find_one({"id": testimonial_id}, {"_id": 0})
+    return testimonial
+
+@api_router.delete("/admin/testimonials/{testimonial_id}")
+async def delete_testimonial(testimonial_id: str, admin: str = Depends(verify_admin)):
+    result = await db.testimonials.delete_one({"id": testimonial_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Testimonial not found")
+    return {"status": "success", "deleted": testimonial_id}
+
+# ==================== IMAGE UPLOADS (admin content: projects/testimonials) ====================
+
+IMAGE_MAX_DIM = 1600
+IMAGE_WEBP_QUALITY = 80
+UPLOAD_RAW_MAX_BYTES = 15 * 1024 * 1024
+
+
+def _optimize_uploaded_image(raw: bytes) -> tuple[bytes, str]:
+    """Resize + re-encode an image to WebP. Raises ValueError if unparseable."""
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+    except Exception as exc:
+        raise ValueError(f"Not a valid image: {exc}") from exc
+
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGBA" if "A" in img.mode or img.mode == "P" else "RGB")
+
+    ratio = min(1.0, IMAGE_MAX_DIM / max(img.width, img.height))
+    if ratio < 1.0:
+        img = img.resize((round(img.width * ratio), round(img.height * ratio)), Image.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP", quality=IMAGE_WEBP_QUALITY, method=6)
+    return buf.getvalue(), "image/webp"
+
+
+@api_router.post("/admin/upload-image")
+async def admin_upload_image(dto: ImageUploadIn, admin: str = Depends(verify_admin)):
+    approx_raw_bytes = (len(dto.data_base64) * 3) // 4
+    if approx_raw_bytes > UPLOAD_RAW_MAX_BYTES:
+        raise HTTPException(status_code=400, detail=f"Upload too large (>{UPLOAD_RAW_MAX_BYTES // (1024*1024)} MB).")
+
+    try:
+        raw = base64.b64decode(dto.data_base64)
+        optimized, content_type = _optimize_uploaded_image(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    upload_id = str(uuid.uuid4())
+    await db.content_uploads.insert_one({
+        "_id": upload_id,
+        "content_type": content_type,
+        "data": optimized,
+        "bytes": len(optimized),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"id": upload_id, "url": f"/api/uploads/{upload_id}", "bytes": len(optimized)}
+
+
+@api_router.get("/uploads/{upload_id}")
+async def get_content_upload(upload_id: str):
+    doc = await db.content_uploads.find_one({"_id": upload_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    return Response(
+        content=bytes(doc["data"]),
+        media_type=doc["content_type"],
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 # Cost Calculator
 @api_router.post("/calculate-cost", response_model=CostEstimateResponse)
