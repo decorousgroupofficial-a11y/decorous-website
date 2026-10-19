@@ -7,8 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { erpApi, erpAuth } from "@/lib/erp-api";
+import { useErpTheme } from "./_shared";
 
 export default function ErpSignupPage() {
+  useErpTheme();
   const navigate = useNavigate();
   const [f, setF] = useState({ org_name: "", full_name: "", email: "", password: "" });
   const [busy, setBusy] = useState(false);

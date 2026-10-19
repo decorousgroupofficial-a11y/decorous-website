@@ -5,8 +5,10 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Plus, ClipboardList, Cloud, CloudRain, Sun, CloudLightning, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { erpApi, formatDate } from "@/lib/erp-api";
-import { ErpPageHeader, ErpEmptyState, ErpMiniStat, ErpStatusPill, ErpPhoto } from "./_shared";
+import { toast } from "sonner";
+import { Send } from "lucide-react";
+import { erpApi, formatDate, todayIST } from "@/lib/erp-api";
+import { ErpPageHeader, ErpEmptyState, ErpMiniStat, ErpStatusPill, ErpPhoto, apiError } from "./_shared";
 
 const WEATHER_ICON = {
   SUNNY: Sun, CLOUDY: Cloud, RAINY: CloudRain, STORMY: CloudLightning,
@@ -21,16 +23,23 @@ export default function ErpDprListPage() {
   const [filter, setFilter] = useState("ALL");
   const [q, setQ] = useState("");
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const [list, pjs] = await Promise.all([erpApi.listDpr(), erpApi.listProjects()]);
-        setRows(list);
-        setProjects(Object.fromEntries(pjs.map((p) => [p.id, p])));
-      } finally { setLoading(false); }
-    })();
-  }, []);
+  async function load() {
+    setLoading(true);
+    try {
+      const [list, pjs] = await Promise.all([erpApi.listDpr(), erpApi.listProjects()]);
+      setRows(list);
+      setProjects(Object.fromEntries(pjs.map((p) => [p.id, p])));
+    } finally { setLoading(false); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function submitDraft(d) {
+    try {
+      await erpApi.submitDpr(d.id);
+      toast.success("Report submitted for approval");
+      load();
+    } catch (err) { toast.error(apiError(err)); }
+  }
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -46,7 +55,7 @@ export default function ErpDprListPage() {
   const stats = useMemo(() => {
     const pending = rows.filter((d) => d.approval_status === "PENDING").length;
     const approved = rows.filter((d) => d.approval_status === "APPROVED").length;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIST();
     const todayCount = rows.filter((d) => d.report_date === today).length;
     return { total: rows.length, pending, approved, todayCount };
   }, [rows]);
@@ -141,6 +150,11 @@ export default function ErpDprListPage() {
                       </span>
                     )}
                     <ErpStatusPill status={d.approval_status} />
+                    {d.approval_status === "DRAFT" && (
+                      <Button size="sm" variant="outline" className="h-6 gap-1 px-2 text-[11px]" onClick={() => submitDraft(d)} data-testid="erp-dpr-submit-draft">
+                        <Send size={11} /> Submit
+                      </Button>
+                    )}
                   </div>
                   <p className="text-sm text-slate-800 line-clamp-2">{d.work_narrative}</p>
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
@@ -160,6 +174,7 @@ export default function ErpDprListPage() {
                       key={i}
                       objectKey={k}
                       alt={`DPR photo ${i + 1}`}
+                      zoomable
                       className="h-14 w-14 rounded-md ring-1 ring-slate-200"
                     />
                   ))}
