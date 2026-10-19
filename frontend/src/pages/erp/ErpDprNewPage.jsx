@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,8 @@ import {
   ArrowLeft, ArrowRight, Camera, Check, Sun, Cloud, CloudRain, CloudLightning,
   Users, Hammer, ClipboardList, X,
 } from "lucide-react";
-import { erpApi, fileToCompressedBase64 } from "@/lib/erp-api";
+import { erpApi, fileToCompressedBase64, todayIST, newKey } from "@/lib/erp-api";
+import { apiError } from "./_shared";
 
 const WEATHERS = [
   { v: "SUNNY", icon: Sun, label: "Sunny" },
@@ -37,7 +38,7 @@ export default function ErpDprNewPage() {
   const [step, setStep] = useState(1);
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
-  const [reportDate] = useState(new Date().toISOString().slice(0, 10));
+  const [reportDate] = useState(todayIST());          // India's date, not the browser's UTC date
   const [narrative, setNarrative] = useState("");
   const [activities, setActivities] = useState([]);
   const [weather, setWeather] = useState("");
@@ -46,8 +47,13 @@ export default function ErpDprNewPage() {
   const [photos, setPhotos] = useState([]); // [{key, preview}]
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
+  // One key per intent so a double-tap / flaky-network retry can't file two reports,
+  // and remember a created-but-not-yet-submitted draft so a retry only re-submits it.
+  const createKey = useRef(newKey());
+  const submitKey = useRef(newKey());
+  const createdId = useRef(null);
 
-  useEffect(() => { erpApi.listProjects().then(setProjects); }, []);
+  useEffect(() => { erpApi.listProjects().then((p) => setProjects(p.filter((x) => x.status !== "ARCHIVED"))); }, []);
 
   const totalLabour = TRADES.reduce(
     (n, t) => n + counts[t].skilled + counts[t].helper, 0,
@@ -65,7 +71,7 @@ export default function ErpDprNewPage() {
       });
       setPhotos((p) => [...p, { key: object_key, preview: `data:image/jpeg;base64,${b64}` }]);
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Photo upload failed");
+      toast.error(apiError(err, "Photo upload failed"));
     } finally {
       setUploading(false);
     }
@@ -83,21 +89,29 @@ export default function ErpDprNewPage() {
         const c = counts[t];
         if (c.skilled + c.helper > 0) labourCounts[t.toLowerCase()] = c;
       }
-      const dpr = await erpApi.createDpr({
-        project_id: projectId,
-        report_date: reportDate,
-        work_narrative: narrative,
-        activity_tags: activities,
-        weather: weather || null,
-        blockers: blockers || null,
-        labour_counts: labourCounts,
-        photo_keys: photos.map((p) => p.key),
-      });
-      await erpApi.submitDpr(dpr.id);
+      if (!createdId.current) {
+        const dpr = await erpApi.createDpr({
+          project_id: projectId,
+          report_date: reportDate,
+          work_narrative: narrative,
+          activity_tags: activities,
+          weather: weather || null,
+          blockers: blockers || null,
+          labour_counts: labourCounts,
+          photo_keys: photos.map((p) => p.key),
+        }, createKey.current);
+        createdId.current = dpr.id;
+      }
+      await erpApi.submitDpr(createdId.current, submitKey.current);
       toast.success("DPR submitted — awaiting PM approval");
       navigate("/erp/dpr");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Failed to submit");
+      if (createdId.current) {
+        toast.error(`Report saved as a draft, but submitting failed: ${apiError(err)}`);
+        navigate("/erp/dpr");                       // the draft has a Submit button there
+      } else {
+        toast.error(apiError(err, "Failed to submit"));
+      }
     } finally { setBusy(false); }
   }
 

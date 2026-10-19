@@ -47,6 +47,9 @@ const ErpDprNewPage = lazy(() => import("@/pages/erp/ErpDprNewPage"));
 const ErpExpensesPage = lazy(() => import("@/pages/erp/ErpExpensesPage"));
 const ErpApprovalsPage = lazy(() => import("@/pages/erp/ErpApprovalsPage"));
 const ErpSettingsPage = lazy(() => import("@/pages/erp/ErpSettingsPage"));
+const ErpProjectDetailPage = lazy(() => import("@/pages/erp/ErpProjectDetailPage"));
+const ErpAttendancePage = lazy(() => import("@/pages/erp/ErpAttendancePage"));
+const ErpLabourPage = lazy(() => import("@/pages/erp/ErpLabourPage"));
 
 // Layout wrapper that hides header/footer for admin and ERP
 const Layout = ({ children }) => {
@@ -105,6 +108,9 @@ function App() {
             <Route path="/erp" element={<ErpLayout />}>
               <Route index element={<ErpOverviewPage />} />
               <Route path="projects" element={<ErpProjectsPage />} />
+              <Route path="projects/:id" element={<ErpProjectDetailPage />} />
+              <Route path="attendance" element={<ErpAttendancePage />} />
+              <Route path="labour" element={<ErpLabourPage />} />
               <Route path="vendors" element={<ErpVendorsPage />} />
               <Route path="materials" element={<ErpMaterialsPage />} />
               <Route path="dpr" element={<ErpDprListPage />} />

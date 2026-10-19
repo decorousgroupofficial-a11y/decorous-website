@@ -27,6 +27,11 @@ export const erpAuth = {
       }),
     );
   },
+  /** Update the cached user (e.g. after /me says the role changed). */
+  update(patch) {
+    const u = this.user;
+    if (u) localStorage.setItem(USER_KEY, JSON.stringify({ ...u, ...patch }));
+  },
   clear() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -54,7 +59,10 @@ client.interceptors.response.use(
   },
 );
 
-function ulid() {
+// An idempotency key identifies ONE user intent. Callers create it when the form
+// opens (newKey()) and pass it on every attempt, so a retry after a flaky network
+// is recognised by the server instead of creating a duplicate record.
+export function newKey() {
   return (
     Date.now().toString(36) +
     Math.random().toString(36).slice(2, 12) +
@@ -62,80 +70,90 @@ function ulid() {
   );
 }
 
+const idem = (key) => ({ headers: { "Idempotency-Key": key || newKey() } });
+const get = (url, params) => client.get(url, { params }).then((r) => r.data);
+const post = (url, body, key) =>
+  client.post(url, body ?? null, key === false ? undefined : idem(key)).then((r) => r.data);
+const patch = (url, body) => client.patch(url, body).then((r) => r.data);
+const put = (url, body) => client.put(url, body).then((r) => r.data);
+
 export const erpApi = {
   // auth
   signup: (data) => client.post("/api/erp/auth/signup", data).then((r) => r.data),
   login: (data) => client.post("/api/erp/auth/login", data).then((r) => r.data),
-  me: () => client.get("/api/erp/me").then((r) => r.data),
+  me: () => get("/api/erp/me"),
 
-  // overview
-  overview: () => client.get("/api/erp/overview").then((r) => r.data),
+  // overview + dashboards
+  overview: () => get("/api/erp/overview"),
+  dashboardProjects: () => get("/api/erp/dashboard/projects"),
+  dashboardProject: (id) => get(`/api/erp/dashboard/projects/${id}`),
+  activity: (limit = 20) => get("/api/erp/dashboard/activity", { limit }),
 
   // projects
-  listProjects: () => client.get("/api/erp/projects").then((r) => r.data),
-  createProject: (body) =>
-    client.post("/api/erp/projects", body).then((r) => r.data),
+  listProjects: () => get("/api/erp/projects"),
+  getProject: (id) => get(`/api/erp/projects/${id}`),
+  createProject: (body) => post("/api/erp/projects", body, false),
+  updateProject: (id, body) => patch(`/api/erp/projects/${id}`, body),
 
-  // vendors
-  listVendors: () => client.get("/api/erp/vendors").then((r) => r.data),
-  createVendor: (body) =>
-    client.post("/api/erp/vendors", body).then((r) => r.data),
+  // vendors (+ what we owe them)
+  listVendors: (params) => get("/api/erp/vendors", params),
+  createVendor: (body) => post("/api/erp/vendors", body, false),
+  updateVendor: (id, body) => patch(`/api/erp/vendors/${id}`, body),
+  vendorBalances: () => get("/api/erp/vendors/balances"),
+  vendorStatement: (id) => get(`/api/erp/vendors/${id}/statement`),
+  listBills: (params) => get("/api/erp/vendor-bills", params),
+  createBill: (body, key) => post("/api/erp/vendor-bills", body, key),
+  listVendorPayments: (params) => get("/api/erp/vendor-payments", params),
+  createVendorPayment: (body, key) => post("/api/erp/vendor-payments", body, key),
 
-  // materials
-  listMaterials: () => client.get("/api/erp/materials").then((r) => r.data),
-  createMaterial: (body) =>
-    client.post("/api/erp/materials", body).then((r) => r.data),
+  // materials + stock
+  listMaterials: (params) => get("/api/erp/materials", params),
+  createMaterial: (body) => post("/api/erp/materials", body, false),
+  updateMaterial: (id, body) => patch(`/api/erp/materials/${id}`, body),
+  listGrns: (params) => get("/api/erp/grns", params),
+  createGrn: (body, key) => post("/api/erp/grns", body, key),
+  stock: (params) => get("/api/erp/stock", params),
+  listIssues: (params) => get("/api/erp/stock/issues", params),
+  createIssue: (body, key) => post("/api/erp/stock/issues", body, key),
+
+  // labour
+  listWorkers: (params) => get("/api/erp/workers", params),
+  createWorker: (body) => post("/api/erp/workers", body, false),
+  updateWorker: (id, body) => patch(`/api/erp/workers/${id}`, body),
+  workerStatement: (id, params) => get(`/api/erp/workers/${id}/statement`, params),
+  roster: (project_id, date) => get("/api/erp/attendance/roster", { project_id, date }),
+  listAttendance: (params) => get("/api/erp/attendance", params),
+  saveAttendance: (body) => put("/api/erp/attendance", body),
+  submitAttendance: (id, key) => post(`/api/erp/attendance/${id}/submit`, null, key),
+  listWorkerPayments: (params) => get("/api/erp/worker-payments", params),
+  createWorkerPayment: (body, key) => post("/api/erp/worker-payments", body, key),
 
   // DPR
-  listDpr: () => client.get("/api/erp/dpr").then((r) => r.data),
-  createDpr: (body) =>
-    client
-      .post("/api/erp/dpr", body, {
-        headers: { "Idempotency-Key": ulid() },
-      })
-      .then((r) => r.data),
-  submitDpr: (id) =>
-    client
-      .post(`/api/erp/dpr/${id}/submit`, null, {
-        headers: { "Idempotency-Key": ulid() },
-      })
-      .then((r) => r.data),
+  listDpr: (params) => get("/api/erp/dpr", params),
+  createDpr: (body, key) => post("/api/erp/dpr", body, key),
+  submitDpr: (id, key) => post(`/api/erp/dpr/${id}/submit`, null, key),
 
   // expenses
-  listExpenses: () => client.get("/api/erp/expenses").then((r) => r.data),
-  createExpense: (body) =>
-    client
-      .post("/api/erp/expenses", body, {
-        headers: { "Idempotency-Key": ulid() },
-      })
-      .then((r) => r.data),
-  submitExpense: (id) =>
-    client
-      .post(`/api/erp/expenses/${id}/submit`, null, {
-        headers: { "Idempotency-Key": ulid() },
-      })
-      .then((r) => r.data),
+  listExpenses: (params) => get("/api/erp/expenses", params),
+  createExpense: (body, key) => post("/api/erp/expenses", body, key),
+  submitExpense: (id, key) => post(`/api/erp/expenses/${id}/submit`, null, key),
 
   // approvals
-  listPendingApprovals: () =>
-    client.get("/api/erp/approvals/pending").then((r) => r.data),
-  decideApproval: (id, body) =>
-    client.post(`/api/erp/approvals/${id}/decide`, body).then((r) => r.data),
+  listPendingApprovals: (params) => get("/api/erp/approvals/pending", params),
+  approvalHistory: (params) => get("/api/erp/approvals/history", params),
+  getApproval: (id) => get(`/api/erp/approvals/${id}`),
+  decideApproval: (id, body) => client.post(`/api/erp/approvals/${id}/decide`, body).then((r) => r.data),
 
   // org + users
-  getMyOrg: () => client.get("/api/erp/orgs/me").then((r) => r.data),
-  listMembers: () => client.get("/api/erp/users").then((r) => r.data),
-  inviteMember: (body) =>
-    client.post("/api/erp/users/invite", body).then((r) => r.data),
+  getMyOrg: () => get("/api/erp/orgs/me"),
+  listMembers: () => get("/api/erp/users"),
+  inviteMember: (body) => client.post("/api/erp/users/invite", body).then((r) => r.data),
+  updateMember: (id, body) => patch(`/api/erp/users/${id}`, body),
   setPin: (pin) => client.post("/api/erp/users/pin", { pin }).then((r) => r.data),
 
-  // uploads
-  presignUpload: (body) =>
-    client.post("/api/erp/uploads/presign", body).then((r) => r.data),
-  uploadInline: (body) =>
-    client.post("/api/erp/uploads/inline", body).then((r) => r.data),
-  getUpload: (key) =>
-    client.get(`/api/erp/uploads/${encodeURIComponent(key)}`).then((r) => r.data),
+  // uploads (inline, stored server-side; the old presign stub discarded files and is gone)
+  uploadInline: (body) => client.post("/api/erp/uploads/inline", body).then((r) => r.data),
+  getUpload: (key) => get(`/api/erp/uploads/${encodeURIComponent(key)}`),
 };
 
 export function formatPaise(paise) {
@@ -156,6 +174,45 @@ export function formatDate(iso) {
     month: "short",
     year: "numeric",
   }).format(d);
+}
+
+/** Today's calendar date in India (YYYY-MM-DD) — never the browser's UTC date. */
+export function todayIST() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+}
+
+/**
+ * "1,234.5" → 123450 paise. Parsed from the STRING so float error can't creep in
+ * (1.005 * 100 === 100.49999999999999). Returns null for anything that isn't a
+ * non-negative amount with at most two decimals.
+ */
+export function toPaise(input) {
+  const t = String(input ?? "").replace(/[₹,\s]/g, "");
+  if (!/^\d+(\.\d{0,2})?$/.test(t)) return null;
+  const [whole, frac = ""] = t.split(".");
+  return Number(whole) * 100 + Number((frac + "00").slice(0, 2));
+}
+
+/** "12.5" → 12500 milli-units. At most three decimals; null if invalid. */
+export function toMilli(input) {
+  const t = String(input ?? "").replace(/[,\s]/g, "");
+  if (!/^\d+(\.\d{0,3})?$/.test(t)) return null;
+  const [whole, frac = ""] = t.split(".");
+  return Number(whole) * 1000 + Number((frac + "000").slice(0, 3));
+}
+
+/** Integer milli-units (12500) → "12.5". */
+export function formatQty(milli) {
+  if (milli == null) return "—";
+  return (Number(milli) / 1000).toLocaleString("en-IN", { maximumFractionDigits: 3 });
+}
+
+/** Whole-number rupees with Indian grouping and no symbol: 123450 paise → "1,234.50". */
+export function formatRupees(paise) {
+  if (paise == null) return "—";
+  return (Number(paise) / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /**

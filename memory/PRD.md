@@ -54,9 +54,47 @@ Active ERP lives at:
 - **DPR new (3-step, mobile)** — ✅ base64 photo upload + client-side resize, orange brand, weather icons
 - Test credentials — see `/app/memory/test_credentials.md`
 
-## In progress / Next (P0)
-- Professionalize remaining ERP pages: **Vendors, Materials, Expenses, Approvals, Settings**
-- Frontend testing agent pass on Projects + DPR flow
+## ERP v2 — Onsite / RDash-style operations (Oct 2026)  ✅ implemented & tested
+Backend modules (all under `/api/erp/*`, wired through `backend/erp_api.py`):
+- `erp_routes.py` (core) — auth, members, projects, vendors, materials, DPR, expenses, approvals engine.
+- `erp_labour.py` — workers, daily **attendance muster** (wages in integer paise, wage snapshot per day,
+  no double-booking across sites), wage/advance payments, per-worker earned-vs-paid statement.
+- `erp_inventory.py` — **goods receipt (GRN)** with maker-checker, stock issue/return (cannot overdraw),
+  stock on hand per site (qty in integer milli-units, weighted-average value, reorder alerts).
+- `erp_finance.py` — **vendor bills** (duplicate-bill refusal, can claim goods receipts), vendor payments,
+  outstanding per vendor + statement (payments clear oldest bill first; overdue flag).
+- `erp_dashboard.py` — **project dashboard**: budget vs cost, cost breakdown, activity feed.
+Frontend: responsive shell (sidebar ≥1024px, bottom tabs + slide-over menu on phones), rebuilt Overview,
+Projects (budget bars), Project detail, Attendance, Workers & Wages, Stock & Materials, Vendors & Bills,
+Expenses, Approvals (full decision context + history), Settings (role / deactivate members).
+
+Approval engine now has a **target registry** (`register_target`): any module plugs into maker-checker,
+supplies how to summarise a record for the approver, and may react when it is decided.
+Routing: EXPENSE & WORKER_PAYMENT ≤₹5k auto / ≤₹25k PM / Owner · MATERIAL_RECEIPT, DPR, ATTENDANCE → PM ·
+VENDOR_BILL & PAYMENT ≤₹50k PM / Owner · any approval ≥₹50k needs the approver's PIN (5 wrong → 15-min lock).
+
+**Project cost model** (no double counting): approved expenses + approved wages + approved vendor bills +
+approved goods receipts *not yet claimed by a bill*. Payments are cash movements, not cost.
+
+**Governance note (ADR-003):** all balances/costs are *derived at read time from approved capture records*
+and labelled "operational — not an accounting ledger". No journals, accounts, periods, ageing buckets or P&L
+were added; every capture row keeps `source_type` / `ledger_posted=false` for the CA phase.
+
+Defects fixed in this pass (each has a regression test in `tests/erp/test_core_bugs.py`):
+projects could never become ACTIVE (KPI always 0) · no DB indexes existed (duplicate project codes/SKUs
+accepted) · expense bill photos went to a stub that discarded them · approvers saw only an amount ·
+6th failed login returned HTTP 500 (naive/aware datetime) · "today"/"month" used UTC not IST ·
+month spend counted rejected expenses · idempotency keys were not atomic and were regenerated per call ·
+role changes / deactivation only took effect after the 24h token expired · transparent dialogs/buttons
+(CSS variable clash in `index.css`) · UTC date stamped on DPRs filed after midnight IST.
+
+## Running the ERP tests
+    pip install -r backend/requirements-dev.txt
+    pytest tests/erp -q          # ~5s, in-memory Mongo, never touches a real database
+
+## Next (P0)
+- Run against a real MongoDB once (index creation, aggregation pipelines) — the suite uses an in-memory mock.
+- Tasks / snag list, documents & drawings, subcontractor work orders & RA bills, BOQ, reports export (PDF/CSV).
 
 ## Backlog (P1)
 - Expense capture — bill proof inline upload + PIN gate UI for ≥ ₹50k

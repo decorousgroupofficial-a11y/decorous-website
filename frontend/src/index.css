@@ -105,6 +105,27 @@ code {
   }
 }
 
+/*
+ * ERP theme scope.
+ * The marketing site defines --background/--primary/--secondary/--accent (and their
+ * -foreground twins) as HEX colours in an unlayered :root. Unlayered CSS beats
+ * `@layer base`, so shadcn's HSL tokens below lose and `hsl(var(--background))`
+ * becomes `hsl(#ffffff)` — invalid, so every dialog / default button / popover
+ * rendered transparent. The ERP adds `erp-theme` to <body> while mounted (see
+ * useErpTheme) so these HSL tokens apply there — including inside portalled
+ * dialogs, which live under <body> — without touching the marketing pages.
+ */
+body.erp-theme {
+  --background: 0 0% 100%;
+  --primary: 215 50% 23%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --accent: 38 92% 55%;
+  --accent-foreground: 0 0% 0%;
+  background: #ffffff;
+}
+
 /* Utility Classes */
 .section-padding {
   @apply py-16 md:py-24;

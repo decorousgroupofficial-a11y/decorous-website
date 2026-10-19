@@ -18,7 +18,7 @@ import asyncio
 import secrets
 import httpx
 import resend
-from erp_routes import router as erp_router
+from erp_api import routers as erp_routers
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -970,7 +970,8 @@ async def get_local_business_schema():
 
 # Include the router in the main app
 app.include_router(api_router)
-app.include_router(erp_router)
+for _erp_router in erp_routers:
+    app.include_router(_erp_router)
 
 # allow_credentials=True with a wildcard origin is rejected by browsers and is
 # a loose config even where it's accepted, so default to the two known

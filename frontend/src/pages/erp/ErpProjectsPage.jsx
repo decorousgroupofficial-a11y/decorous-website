@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -6,8 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Briefcase, Plus, Search, MapPin, Building2 } from "lucide-react";
-import { erpApi, formatPaise, formatDate } from "@/lib/erp-api";
-import { ErpPageHeader, ErpEmptyState, ErpMiniStat, ErpStatusPill } from "./_shared";
+import { erpApi, formatPaise, toPaise } from "@/lib/erp-api";
+import { ErpPageHeader, ErpEmptyState, ErpMiniStat, ErpStatusPill, ErpBudgetBar, apiError, useErpRole } from "./_shared";
 
 const STATUS_FILTERS = ["ALL", "PLANNED", "ACTIVE", "ON_HOLD", "COMPLETED"];
 
@@ -17,10 +18,11 @@ export default function ErpProjectsPage() {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("ALL");
+  const { can } = useErpRole();
 
   async function reload() {
     setLoading(true);
-    try { setRows(await erpApi.listProjects()); }
+    try { setRows((await erpApi.dashboardProjects()).projects); }
     finally { setLoading(false); }
   }
   useEffect(() => { reload(); }, []);
@@ -39,7 +41,8 @@ export default function ErpProjectsPage() {
     const active = rows.filter((p) => p.status === "ACTIVE").length;
     const planned = rows.filter((p) => p.status === "PLANNED").length;
     const budget = rows.reduce((n, p) => n + (p.budget_cents || 0), 0);
-    return { active, planned, budget, total: rows.length };
+    const cost = rows.reduce((n, p) => n + (p.total_cost_cents || 0), 0);
+    return { active, planned, budget, cost, total: rows.length };
   }, [rows]);
 
   return (
@@ -49,9 +52,11 @@ export default function ErpProjectsPage() {
         title="Projects"
         description="Every site you're running — from planning through handover."
         action={
-          <Button onClick={() => setOpen(true)} data-testid="erp-new-project-btn" className="gap-1.5">
-            <Plus size={16} /> New project
-          </Button>
+          can("PM") && (
+            <Button onClick={() => setOpen(true)} data-testid="erp-new-project-btn" className="gap-1.5">
+              <Plus size={16} /> New project
+            </Button>
+          )
         }
       />
 
@@ -59,7 +64,7 @@ export default function ErpProjectsPage() {
         <ErpMiniStat label="Total" value={stats.total} />
         <ErpMiniStat label="Active" value={stats.active} accent="orange" />
         <ErpMiniStat label="Planned" value={stats.planned} />
-        <ErpMiniStat label="Combined budget" value={formatPaise(stats.budget)} />
+        <ErpMiniStat label="Cost / budget" value={`${formatPaise(stats.cost)} / ${formatPaise(stats.budget)}`} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -117,8 +122,8 @@ export default function ErpProjectsPage() {
                   <th className="px-4 py-3 font-semibold">Project</th>
                   <th className="px-4 py-3 font-semibold">Client · Location</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold text-right">Budget</th>
-                  <th className="px-4 py-3 font-semibold text-right">Created</th>
+                  <th className="px-4 py-3 font-semibold">Budget used</th>
+                  <th className="px-4 py-3 font-semibold text-right">Cost · Budget</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -126,7 +131,10 @@ export default function ErpProjectsPage() {
                   <tr key={p.id} className="hover:bg-orange-50/30 transition" data-testid={`erp-project-row-${p.code}`}>
                     <td className="px-4 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">{p.code}</td>
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-slate-900">{p.name}</div>
+                      <Link to={`/erp/projects/${p.id}`} className="font-semibold text-slate-900 hover:text-orange-600 hover:underline">{p.name}</Link>
+                      {p.pending_count > 0 && (
+                        <div className="text-[11px] font-medium text-amber-700">{p.pending_count} pending approval</div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       <div className="flex items-center gap-1.5">
@@ -141,11 +149,10 @@ export default function ErpProjectsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3"><ErpStatusPill status={p.status} /></td>
-                    <td className="px-4 py-3 text-right font-medium tabular-nums whitespace-nowrap">
-                      {formatPaise(p.budget_cents)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs text-slate-500 whitespace-nowrap">
-                      {formatDate(p.created_at)}
+                    <td className="px-4 py-3 min-w-[150px]"><ErpBudgetBar pct={p.utilization_pct} /></td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
+                      <div className="font-semibold">{formatPaise(p.total_cost_cents)}</div>
+                      <div className="text-xs text-slate-500">of {formatPaise(p.budget_cents)}</div>
                     </td>
                   </tr>
                 ))}
@@ -161,11 +168,12 @@ export default function ErpProjectsPage() {
 }
 
 function NewDialog({ open, onOpenChange, onCreated }) {
-  const [f, setF] = useState({ code: "", name: "", client_name: "", location: "", budget: "" });
+  const [f, setF] = useState({ code: "", name: "", client_name: "", location: "", budget: "", start_date: "", end_date: "" });
   const [busy, setBusy] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
+    if (f.budget && toPaise(f.budget) == null) return toast.error("Enter the budget as a number, e.g. 12500000");
     setBusy(true);
     try {
       await erpApi.createProject({
@@ -173,14 +181,16 @@ function NewDialog({ open, onOpenChange, onCreated }) {
         name: f.name,
         client_name: f.client_name || null,
         location: f.location || null,
-        budget_cents: f.budget ? Math.round(Number(f.budget) * 100) : null,
+        budget_cents: f.budget ? toPaise(f.budget) : null,
+        start_date: f.start_date || null,
+        end_date: f.end_date || null,
       });
       toast.success("Project created");
-      setF({ code: "", name: "", client_name: "", location: "", budget: "" });
+      setF({ code: "", name: "", client_name: "", location: "", budget: "", start_date: "", end_date: "" });
       onOpenChange(false);
       onCreated();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Failed to create project");
+      toast.error(apiError(err, "Failed to create project"));
     } finally { setBusy(false); }
   }
 
@@ -221,9 +231,19 @@ function NewDialog({ open, onOpenChange, onCreated }) {
           </div>
           <div>
             <Label className="text-xs">Budget (₹)</Label>
-            <Input type="number" min={0} placeholder="e.g. 12500000"
+            <Input inputMode="decimal" placeholder="e.g. 12500000"
               value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} />
             <p className="text-[10px] text-slate-400 mt-1">Total approved value. Leave blank if TBD.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Start date</Label>
+              <Input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} />
+            </div>
+            <div>
+              <Label className="text-xs">Planned handover</Label>
+              <Input type="date" min={f.start_date || undefined} value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} />
+            </div>
           </div>
           <div className="flex gap-2 pt-1">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1">

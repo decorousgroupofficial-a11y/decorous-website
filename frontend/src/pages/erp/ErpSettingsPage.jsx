@@ -6,7 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { erpApi } from "@/lib/erp-api";
+import { erpApi, erpAuth } from "@/lib/erp-api";
+import { apiError, useErpRole } from "./_shared";
 
 const ROLES = ["OWNER", "ACCOUNTANT", "PM", "ENGINEER", "STOREKEEPER", "VIEWER"];
 
@@ -15,6 +16,17 @@ export default function ErpSettingsPage() {
   const [members, setMembers] = useState([]);
   const [invOpen, setInvOpen] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
+  const { can } = useErpRole();
+  const isOwner = can();                       // Owner-only controls (the API enforces it too)
+  const me = erpAuth.user;
+
+  async function patchMember(m, body, okMsg) {
+    try {
+      await erpApi.updateMember(m.id, body);
+      toast.success(okMsg);
+      reload();
+    } catch (err) { toast.error(apiError(err)); }
+  }
 
   async function reload() {
     setOrg(await erpApi.getMyOrg());
@@ -31,7 +43,7 @@ export default function ErpSettingsPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setPinOpen(true)}>Set my PIN</Button>
-          <Button onClick={() => setInvOpen(true)}>+ Invite member</Button>
+          {isOwner && <Button onClick={() => setInvOpen(true)} data-testid="erp-invite-btn">+ Invite member</Button>}
         </div>
       </div>
 
@@ -56,27 +68,46 @@ export default function ErpSettingsPage() {
         {members.length === 0 ? (
           <p className="p-5 text-sm text-slate-500">No members yet.</p>
         ) : (
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-              <tr><th className="px-5 py-3">Name</th><th className="px-5 py-3">Email</th>
-                <th className="px-5 py-3">Role</th><th className="px-5 py-3">Status</th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {members.map((m) => (
-                <tr key={m.id}>
-                  <td className="px-5 py-3 font-medium">{m.user.full_name}</td>
-                  <td className="px-5 py-3 text-slate-600">{m.user.email}</td>
-                  <td className="px-5 py-3"><Badge variant="secondary">{m.role}</Badge></td>
-                  <td className="px-5 py-3">
-                    <Badge className={m.accepted_at ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"}>
-                      {m.accepted_at ? "Active" : "Invited"}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr><th className="px-5 py-3">Name</th><th className="px-5 py-3">Email</th>
+                  <th className="px-5 py-3">Role</th><th className="px-5 py-3">Status</th><th className="px-5 py-3" /></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {members.map((m) => (
+                  <tr key={m.id} className={m.is_active ? "" : "bg-slate-50 text-slate-400"} data-testid={`erp-member-row-${m.user.email}`}>
+                    <td className="px-5 py-3 font-medium">{m.user.full_name}{m.user.id === me?.user_id && <span className="ml-1.5 text-xs text-slate-400">(you)</span>}</td>
+                    <td className="px-5 py-3 text-slate-600">{m.user.email}</td>
+                    <td className="px-5 py-3">
+                      {isOwner ? (
+                        <select value={m.role} aria-label={`Role for ${m.user.full_name}`}
+                          onChange={(e) => patchMember(m, { role: e.target.value }, "Role updated")}
+                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs" data-testid={`erp-member-role-${m.user.email}`}>
+                          {ROLES.map((r) => <option key={r}>{r}</option>)}
+                        </select>
+                      ) : <Badge variant="secondary">{m.role}</Badge>}
+                    </td>
+                    <td className="px-5 py-3">
+                      <Badge className={m.is_active ? "bg-green-100 text-green-800" : "bg-slate-200 text-slate-600"}>
+                        {m.is_active ? "Active" : "Deactivated"}
+                      </Badge>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      {isOwner && (
+                        <Button size="sm" variant="ghost" onClick={() => patchMember(m, { active: !m.is_active }, m.is_active ? "Access removed" : "Access restored")}
+                          data-testid={`erp-member-toggle-${m.user.email}`}>
+                          {m.is_active ? "Deactivate" : "Reactivate"}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
+        {isOwner && <p className="border-t border-slate-100 px-5 py-3 text-[11px] text-slate-400">Role changes and deactivation take effect immediately. An organisation always keeps at least one active Owner.</p>}
       </Card>
 
       <InviteDialog open={invOpen} onOpenChange={setInvOpen} onDone={reload} />
@@ -99,7 +130,7 @@ function InviteDialog({ open, onOpenChange, onDone }) {
       onOpenChange(false);
       onDone();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Failed");
+      toast.error(apiError(err));
     } finally { setBusy(false); }
   }
 
@@ -150,7 +181,7 @@ function PinDialog({ open, onOpenChange }) {
       setDone(true);
       toast.success("PIN saved");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Failed");
+      toast.error(apiError(err));
     } finally { setBusy(false); }
   }
 

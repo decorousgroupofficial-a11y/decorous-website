@@ -1,0 +1,5 @@
+# Test-only dependencies. Production (render.yaml) installs requirements.txt only.
+-r requirements.txt
+pytest>=8,<9
+mongomock-motor>=0.0.36        # in-memory MongoDB so tests never touch a real database
+eval_type_backport; python_version < "3.10"   # lets Python 3.9 evaluate the `X | None` hints used on Render's 3.11

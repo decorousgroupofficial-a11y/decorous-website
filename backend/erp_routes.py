@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import os
+import re
 import secrets
 from datetime import datetime, timezone, timedelta, date
-from typing import Optional, List, Literal, Any
+from typing import Optional, List, Literal, Any, Callable, Awaitable
 import uuid
 
 import bcrypt
@@ -31,9 +33,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from motor.motor_asyncio import AsyncIOMotorClient
 from PIL import Image
 from pydantic import BaseModel, Field, EmailStr
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from pathlib import Path
 load_dotenv(Path(__file__).parent / '.env')
+
+logger = logging.getLogger("decorous.erp")
 
 
 # ── Config ───────────────────────────────────────────────────────────────────
@@ -49,8 +54,17 @@ if not JWT_SECRET or len(JWT_SECRET) < 32:
 JWT_ALGO = "HS256"
 JWT_EXPIRES_MIN = 60 * 24  # 24h — long for convenience; refresh token pattern deferred
 
-_mongo = AsyncIOMotorClient(os.environ["MONGO_URL"])
+# tz_aware=True: Mongo stores UTC instants but, by default, hands them back as
+# *naive* datetimes. Comparing those with our aware `_now()` raises TypeError
+# (this crashed the "account locked" branch of login) and serialises to ISO
+# strings with no offset, which browsers then misread as local time.
+_mongo = AsyncIOMotorClient(os.environ["MONGO_URL"], tz_aware=True)
 _db = _mongo[os.environ["DB_NAME"]]
+
+# Open self-service signup creates a brand-new organisation. Fine while the
+# first org is being set up; set ERP_ALLOW_SIGNUP=false afterwards so strangers
+# cannot create orgs on a public URL.
+ALLOW_SIGNUP = os.environ.get("ERP_ALLOW_SIGNUP", "true").strip().lower() not in ("0", "false", "no", "off")
 
 # Collections
 col_users = _db["erp_users"]
@@ -78,6 +92,23 @@ security = HTTPBearer(auto_error=False)
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# India has no DST, so a fixed +05:30 offset is exactly Asia/Kolkata and avoids
+# depending on a tz database being present on the host.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _today_ist() -> date:
+    """The current calendar date in India — what a site engineer means by "today"."""
+    return _now().astimezone(IST).date()
+
+
+def _aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """Treat naive datetimes from Mongo as UTC so comparisons never raise."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _uid() -> str:
@@ -132,10 +163,24 @@ async def get_ctx(
         raise HTTPException(401, "Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(401, "Invalid token")
+
+    # The token only proves *who* the caller is. Role and access are re-read from
+    # the database on every request so that deactivating a member or changing
+    # their role takes effect at once instead of when a 24h token expires.
+    membership = await col_memberships.find_one({
+        "org_id": payload["org_id"], "user_id": payload["sub"],
+        "deleted_at": None, "accepted_at": {"$ne": None},
+        "is_active": {"$ne": False},
+    })
+    if not membership:
+        raise HTTPException(401, "Access to this organisation has been revoked")
+    user = await col_users.find_one({"_id": payload["sub"], "deleted_at": None}, {"is_active": 1})
+    if not user or user.get("is_active") is False:
+        raise HTTPException(401, "Account is deactivated")
     return AuthCtx(
         user_id=payload["sub"],
         org_id=payload["org_id"],
-        role=payload["role"],
+        role=membership["role"],
         email=payload["email"],
     )
 
@@ -148,32 +193,85 @@ def require_role(*roles: str):
     return guard
 
 
+STALE_CLAIM_SECONDS = 120   # no ERP write takes anywhere near this long
+
+
 async def enforce_idempotency(
     request: Request, ctx: AuthCtx, handler,
 ) -> Any:
     """
     Wraps a write handler with idempotency protection.
-    Client sends Idempotency-Key header; duplicates return cached response.
+
+    The client sends an Idempotency-Key header. The key is *claimed* atomically
+    (unique index on org_id+key) before the handler runs, so two concurrent
+    requests with the same key cannot both execute:
+      • finished earlier        → replay the stored response
+      • still running elsewhere → 409 (client should retry shortly)
+      • used for another route  → 409 (a key identifies exactly one request)
+    If the handler fails, the claim is released so the client can fix the
+    payload and retry with the same key.
     """
     key = request.headers.get("idempotency-key") or request.headers.get("Idempotency-Key")
-    if not key or len(key) < 8:
+    if not key or len(key) < 8 or len(key) > 128:
         raise HTTPException(400, "Missing or invalid Idempotency-Key header")
 
-    existing = await col_idempotency.find_one({"org_id": ctx.org_id, "key": key})
-    if existing:
-        return existing["response"]
+    method, path = request.method, request.url.path
+    claim_id = _uid()
+    for attempt in (1, 2):
+        try:
+            await col_idempotency.insert_one({
+                "_id": claim_id, "org_id": ctx.org_id, "key": key, "user_id": ctx.user_id,
+                "method": method, "path": path, "state": "IN_PROGRESS",
+                "response": None, "created_at": _now(),
+            })
+            break
+        except DuplicateKeyError:
+            existing = await col_idempotency.find_one({"org_id": ctx.org_id, "key": key})
+            if existing is None:                   # claim was released between our two calls
+                if attempt == 1:
+                    continue
+                raise HTTPException(409, "Please retry the request")
+            # Records written before state/method/path existed are treated as finished.
+            if existing.get("path") and (existing.get("method"), existing["path"]) != (method, path):
+                raise HTTPException(409, "This Idempotency-Key was already used for a different request")
+            if existing.get("state", "DONE") == "DONE":
+                return existing["response"]
+            # Still IN_PROGRESS. A claim left behind by a crashed/killed request (e.g. a
+            # free-tier instance recycled mid-request) would otherwise block this key for the
+            # whole TTL, so a claim older than STALE_CLAIM_SECONDS is treated as abandoned.
+            age = (_now() - (_aware(existing.get("created_at")) or _now())).total_seconds()
+            if attempt == 1 and age > STALE_CLAIM_SECONDS:
+                await col_idempotency.delete_one({"_id": existing["_id"], "state": "IN_PROGRESS"})
+                continue
+            raise HTTPException(409, "A request with this Idempotency-Key is still being processed")
 
-    result = await handler()
-
-    await col_idempotency.insert_one({
-        "_id": _uid(),
-        "org_id": ctx.org_id,
-        "key": key,
-        "user_id": ctx.user_id,
-        "response": result,
-        "created_at": _now(),
-    })
+    try:
+        result = await handler()
+    except BaseException:
+        await col_idempotency.delete_one({"_id": claim_id})
+        raise
+    await col_idempotency.update_one(
+        {"_id": claim_id}, {"$set": {"state": "DONE", "response": result}},
+    )
     return result
+
+
+async def require_uploads(ctx: AuthCtx, keys: List[str], what: str = "file") -> None:
+    """
+    Every referenced upload must exist, belong to *this* organisation, and be
+    distinct. Without this an expense could "attach" a bill that was never
+    stored (or another tenant's file) and the approver would be shown nothing.
+    """
+    keys = [k for k in keys if k]
+    if len(set(keys)) != len(keys):
+        raise HTTPException(400, f"Each {what} must be a different file")
+    if not keys:
+        return
+    found = await col_uploads.count_documents({"_id": {"$in": keys}, "org_id": ctx.org_id})
+    if found != len(keys):
+        raise HTTPException(
+            400, f"A {what} was not uploaded or does not belong to this organisation. Re-attach it and try again.",
+        )
 
 
 async def log_audit(ctx: AuthCtx, action: str, entity_type: str, entity_id: str, after: dict | None = None):
@@ -193,13 +291,48 @@ async def log_audit(ctx: AuthCtx, action: str, entity_type: str, entity_id: str,
 
 Role = Literal["OWNER", "ACCOUNTANT", "PM", "ENGINEER", "STOREKEEPER", "VIEWER"]
 ApprovalStatus = Literal["DRAFT", "PENDING", "APPROVED", "REJECTED", "VOID"]
-SourceType = Literal["EXPENSE", "MATERIAL_RECEIPT", "VENDOR_BILL", "PAYMENT", "DPR"]
+SourceType = Literal[
+    "EXPENSE", "MATERIAL_RECEIPT", "VENDOR_BILL", "PAYMENT", "DPR",
+    "ATTENDANCE", "WORKER_PAYMENT",
+]
 ProjectStatus = Literal["PLANNED", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]
+
+# Allowed project lifecycle moves. ARCHIVED is terminal (and keeps its code
+# reserved, which is why project codes can never be reused).
+PROJECT_TRANSITIONS = {
+    "PLANNED": {"ACTIVE", "ON_HOLD", "ARCHIVED"},
+    "ACTIVE": {"ON_HOLD", "COMPLETED"},
+    "ON_HOLD": {"ACTIVE", "COMPLETED", "ARCHIVED"},
+    "COMPLETED": {"ACTIVE", "ARCHIVED"},
+    "ARCHIVED": set(),
+}
+
+DATE_RE = r"^\d{4}-\d{2}-\d{2}$"
+GSTIN_RE = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
+
+
 Weather = Literal["SUNNY", "CLOUDY", "RAINY", "STORMY"]
 MaterialCategory = Literal[
     "CEMENT", "STEEL", "AGGREGATE", "SAND", "BRICK", "ELECTRICAL",
     "PLUMBING", "PAINT", "WOOD", "TILES", "HARDWARE", "CONSUMABLE", "OTHER",
 ]
+
+
+def _assert_not_future(value: Optional[str], label: str = "Date") -> None:
+    """Allow today and tomorrow (IST) — late-night entries — but not further ahead."""
+    if value and date.fromisoformat(value) > _today_ist() + timedelta(days=1):
+        raise HTTPException(422, f"{label} cannot be in the future")
+
+
+def _valid_date(value: Optional[str]) -> Optional[str]:
+    """YYYY-MM-DD that is also a real calendar date (rejects 2026-02-31)."""
+    if value in (None, ""):
+        return None
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(422, f"'{value}' is not a valid date (use YYYY-MM-DD)")
+    return value
 
 
 class SignupIn(BaseModel):
@@ -237,15 +370,44 @@ class ProjectIn(BaseModel):
     client_name: Optional[str] = None
     location: Optional[str] = None
     budget_cents: Optional[int] = Field(default=None, ge=0)
+    start_date: Optional[str] = Field(default=None, pattern=DATE_RE)
+    end_date: Optional[str] = Field(default=None, pattern=DATE_RE)   # planned handover
+
+
+class ProjectPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2)
+    client_name: Optional[str] = None
+    location: Optional[str] = None
+    budget_cents: Optional[int] = Field(default=None, ge=0)
+    start_date: Optional[str] = Field(default=None, pattern=DATE_RE)
+    end_date: Optional[str] = Field(default=None, pattern=DATE_RE)
+    status: Optional[ProjectStatus] = None
+
+
+VendorKind = Literal["SUPPLIER", "SUBCONTRACTOR", "LABOUR_CONTRACTOR", "OTHER"]
 
 
 class VendorIn(BaseModel):
     name: str = Field(min_length=2)
+    kind: VendorKind = "SUPPLIER"
+    contact_person: Optional[str] = None
     gstin: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+
+
+class VendorPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2)
+    kind: Optional[VendorKind] = None
+    contact_person: Optional[str] = None
+    gstin: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class MaterialIn(BaseModel):
@@ -254,6 +416,17 @@ class MaterialIn(BaseModel):
     category: MaterialCategory
     uom: str
     hsn_code: Optional[str] = None
+    # Reorder level in milli-units (1 bag = 1000). Stock at/below this is flagged.
+    min_stock_milli: Optional[int] = Field(default=None, ge=0)
+
+
+class MaterialPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2)
+    category: Optional[MaterialCategory] = None
+    uom: Optional[str] = None
+    hsn_code: Optional[str] = None
+    min_stock_milli: Optional[int] = Field(default=None, ge=0)
+    is_active: Optional[bool] = None
 
 
 class DprIn(BaseModel):
@@ -293,6 +466,11 @@ class InviteIn(BaseModel):
     temp_password: str = Field(min_length=8)
 
 
+class MemberPatch(BaseModel):
+    role: Optional[Role] = None
+    active: Optional[bool] = None
+
+
 class SetPinIn(BaseModel):
     pin: str = Field(min_length=4, max_length=4)
 
@@ -305,17 +483,46 @@ SLA_HOURS = {"PM": 24, "OWNER": 48, "ACCOUNTANT": 24}
 
 def _required_role(target_type: SourceType, amount_cents: Optional[int]) -> str:
     amt = amount_cents or 0
-    if target_type == "EXPENSE":
+    # Petty-cash style outflows: ≤ ₹5,000 auto-approves, ≤ ₹25,000 PM, above that Owner.
+    if target_type in ("EXPENSE", "WORKER_PAYMENT"):
         if amt <= 500_000:
             return "AUTO"
         if amt <= 2_500_000:
             return "PM"
         return "OWNER"
-    if target_type in ("MATERIAL_RECEIPT", "DPR"):
+    # Operational records that a PM signs off regardless of size.
+    if target_type in ("MATERIAL_RECEIPT", "DPR", "ATTENDANCE"):
         return "PM"
+    # Money owed to / paid to suppliers: PM up to ₹50,000, Owner above.
     if target_type in ("VENDOR_BILL", "PAYMENT"):
         return "PM" if amt <= 5_000_000 else "OWNER"
     return "OWNER"
+
+
+# ── Approval target registry ─────────────────────────────────────────────────
+# Each module that produces approvable records registers itself here. The engine
+# then knows (a) which collection to flip approval_status on and (b) how to
+# summarise a record for the approver, without importing the module.
+
+class ApprovalTarget:
+    def __init__(
+        self, collection, summarize: Callable[[dict], dict],
+        on_decided: Optional[Callable[[dict, str], Awaitable[None]]] = None,
+    ):
+        self.collection = collection
+        self.summarize = summarize
+        # Optional side effect once a decision is recorded: on_decided(approval, new_status).
+        self.on_decided = on_decided
+
+
+TARGETS: dict[str, ApprovalTarget] = {}
+
+
+def register_target(
+    target_type: str, collection, summarize: Callable[[dict], dict],
+    on_decided: Optional[Callable[[dict, str], Awaitable[None]]] = None,
+) -> None:
+    TARGETS[target_type] = ApprovalTarget(collection, summarize, on_decided)
 
 
 async def _request_approval(
@@ -335,6 +542,7 @@ async def _request_approval(
             "amount_cents": amount_cents,
             "currency": "INR",
             "status": "APPROVED",
+            "auto": True,
             "required_role": "ENGINEER",
             "requested_by_id": ctx.user_id,
             "approver_id": ctx.user_id,
@@ -367,6 +575,7 @@ async def _request_approval(
         "amount_cents": amount_cents,
         "currency": "INR",
         "status": "PENDING",
+        "auto": False,
         "required_role": required,
         "requested_by_id": ctx.user_id,
         "approver_id": None,
@@ -427,6 +636,8 @@ async def _escalation_sweep(org_id: str):
 
 @router.post("/auth/signup", response_model=AuthOut)
 async def signup(dto: SignupIn):
+    if not ALLOW_SIGNUP:
+        raise HTTPException(403, "Self-service signup is disabled. Ask your organisation owner for an invite.")
     if await col_users.find_one({"email": dto.email}):
         raise HTTPException(400, "Email already registered")
 
@@ -478,22 +689,30 @@ async def login(dto: LoginIn):
     if not user or not user.get("is_active"):
         raise HTTPException(401, "Invalid credentials")
 
-    if user.get("locked_until") and user["locked_until"] > _now():
-        raise HTTPException(401, "Account temporarily locked")
+    now = _now()
+    locked_until = _aware(user.get("locked_until"))
+    failed_before = user.get("failed_logins", 0)
+    if locked_until and locked_until > now:
+        raise HTTPException(401, "Account temporarily locked. Try again in a few minutes.")
+    if locked_until:
+        # The lock has lapsed: start counting afresh, otherwise a single typo
+        # right after the lock expires would lock the account again.
+        failed_before = 0
 
     if not _verify_password(dto.password, user["password_hash"]):
-        failed = user.get("failed_logins", 0) + 1
-        update = {"failed_logins": failed}
+        failed = failed_before + 1
+        update = {"failed_logins": failed, "locked_until": None}
         if failed >= 5:
-            update["locked_until"] = _now() + timedelta(minutes=15)
+            update["locked_until"] = now + timedelta(minutes=15)
         await col_users.update_one({"_id": user["_id"]}, {"$set": update})
         raise HTTPException(401, "Invalid credentials")
 
     membership = await col_memberships.find_one({
         "user_id": user["_id"], "accepted_at": {"$ne": None}, "deleted_at": None,
+        "is_active": {"$ne": False},
     })
     if not membership:
-        raise HTTPException(401, "No org membership")
+        raise HTTPException(401, "No active organisation membership")
 
     await col_users.update_one({"_id": user["_id"]}, {"$set": {
         "failed_logins": 0, "locked_until": None, "last_login_at": _now(),
@@ -535,13 +754,19 @@ async def list_members(ctx: AuthCtx = Depends(get_ctx)):
     members = await col_memberships.find(
         {"org_id": ctx.org_id, "deleted_at": None},
     ).to_list(500)
+    users = {
+        u["_id"]: u async for u in col_users.find(
+            {"_id": {"$in": [m["user_id"] for m in members]}},
+        )
+    }
     out = []
     for m in members:
-        user = await col_users.find_one({"_id": m["user_id"]})
+        user = users.get(m["user_id"])
         if user:
             out.append({
                 "id": m["_id"],
                 "role": m["role"],
+                "is_active": m.get("is_active", True) is not False,
                 "accepted_at": m.get("accepted_at"),
                 "user": {
                     "id": user["_id"],
@@ -551,6 +776,37 @@ async def list_members(ctx: AuthCtx = Depends(get_ctx)):
                 },
             })
     return out
+
+
+@router.patch("/users/{membership_id}", dependencies=[Depends(require_role("OWNER"))])
+async def update_member(membership_id: str, dto: MemberPatch, ctx: AuthCtx = Depends(get_ctx)):
+    """Owner-only: change a member's role, or deactivate / reactivate them."""
+    m = await col_memberships.find_one({"_id": membership_id, "org_id": ctx.org_id, "deleted_at": None})
+    if not m:
+        raise HTTPException(404, "Member not found")
+
+    changes: dict = {}
+    if dto.role is not None and dto.role != m["role"]:
+        changes["role"] = dto.role
+    if dto.active is not None and dto.active != (m.get("is_active", True) is not False):
+        changes["is_active"] = dto.active
+    if not changes:
+        return {"id": membership_id, "role": m["role"], "is_active": m.get("is_active", True) is not False}
+
+    # An organisation must always keep at least one active Owner.
+    still_owner = changes.get("role", m["role"]) == "OWNER" and changes.get("is_active", m.get("is_active", True) is not False)
+    if m["role"] == "OWNER" and not still_owner:
+        other_owners = await col_memberships.count_documents({
+            "org_id": ctx.org_id, "role": "OWNER", "deleted_at": None,
+            "is_active": {"$ne": False}, "_id": {"$ne": membership_id},
+        })
+        if other_owners == 0:
+            raise HTTPException(400, "This is the last active Owner. Promote another member to Owner first.")
+
+    await col_memberships.update_one({"_id": membership_id}, {"$set": changes})
+    await log_audit(ctx, "member.updated", "membership", membership_id, changes)
+    return {"id": membership_id, "role": changes.get("role", m["role"]),
+            "is_active": changes.get("is_active", m.get("is_active", True) is not False)}
 
 
 @router.post("/users/invite", dependencies=[Depends(require_role("OWNER"))])
@@ -608,15 +864,20 @@ async def list_projects(ctx: AuthCtx = Depends(get_ctx)):
 @router.post("/projects", dependencies=[Depends(require_role("OWNER", "PM"))])
 async def create_project(dto: ProjectIn, ctx: AuthCtx = Depends(get_ctx)):
     pid = _uid()
+    start, end = _valid_date(dto.start_date), _valid_date(dto.end_date)
+    if start and end and end < start:
+        raise HTTPException(422, "End date cannot be before start date")
     doc = {
         "_id": pid,
         "org_id": ctx.org_id,
-        "code": dto.code.upper(),
+        "code": dto.code.strip().upper(),
         "name": dto.name,
         "client_name": dto.client_name,
         "location": dto.location,
         "status": "PLANNED",
         "budget_cents": dto.budget_cents,
+        "start_date": start,
+        "end_date": end,
         "currency": "INR",
         "created_by_id": ctx.user_id,
         "created_at": _now(),
@@ -624,20 +885,93 @@ async def create_project(dto: ProjectIn, ctx: AuthCtx = Depends(get_ctx)):
     }
     try:
         await col_projects.insert_one(doc)
-    except Exception:
-        raise HTTPException(400, "Project code already exists in org")
-    await log_audit(ctx, "project.created", "project", pid, {"code": dto.code})
+    except DuplicateKeyError:
+        raise HTTPException(400, f"Project code {doc['code']} already exists")
+    await log_audit(ctx, "project.created", "project", pid, {"code": doc["code"]})
     doc["id"] = doc.pop("_id")
     return _clean(doc)
 
 
+async def _get_project_or_404(ctx: AuthCtx, project_id: str) -> dict:
+    p = await col_projects.find_one({"_id": project_id, "org_id": ctx.org_id, "deleted_at": None})
+    if not p:
+        raise HTTPException(404, "Project not found")
+    return p
+
+
+def assert_project_open(project: dict) -> None:
+    """No new site records against an archived (closed-out) project."""
+    if project.get("status") == "ARCHIVED":
+        raise HTTPException(400, f"Project {project.get('code')} is archived and no longer accepts new records")
+
+
+@router.get("/projects/{project_id}")
+async def get_project(project_id: str, ctx: AuthCtx = Depends(get_ctx)):
+    p = await _get_project_or_404(ctx, project_id)
+    p["id"] = p.pop("_id")
+    return _clean(p)
+
+
+@router.patch("/projects/{project_id}", dependencies=[Depends(require_role("OWNER", "PM"))])
+async def update_project(project_id: str, dto: ProjectPatch, ctx: AuthCtx = Depends(get_ctx)):
+    p = await _get_project_or_404(ctx, project_id)
+    changes = dto.model_dump(exclude_unset=True)
+    if not changes:
+        p["id"] = p.pop("_id")
+        return _clean(p)
+
+    # Budget is a financial commitment: only an Owner may change it.
+    if "budget_cents" in changes and ctx.role != "OWNER":
+        raise HTTPException(403, "Only an Owner can change the project budget")
+
+    if "status" in changes and changes["status"] != p["status"]:
+        if changes["status"] not in PROJECT_TRANSITIONS[p["status"]]:
+            allowed = ", ".join(sorted(PROJECT_TRANSITIONS[p["status"]])) or "none (terminal)"
+            raise HTTPException(400, f"Cannot move a {p['status']} project to {changes['status']}. Allowed: {allowed}")
+    else:
+        changes.pop("status", None)
+
+    for f in ("start_date", "end_date"):
+        if f in changes:
+            changes[f] = _valid_date(changes[f])
+    start = changes.get("start_date", p.get("start_date"))
+    end = changes.get("end_date", p.get("end_date"))
+    if start and end and end < start:
+        raise HTTPException(422, "End date cannot be before start date")
+
+    if not changes:
+        p["id"] = p.pop("_id")
+        return _clean(p)
+    changes["updated_at"] = _now()
+    await col_projects.update_one({"_id": project_id, "org_id": ctx.org_id}, {"$set": changes})
+    await log_audit(ctx, "project.updated", "project", project_id, {k: v for k, v in changes.items() if k != "updated_at"})
+    p.update(changes)
+    p["id"] = p.pop("_id")
+    return _clean(p)
+
+
 # ── Vendors ──────────────────────────────────────────────────────────────────
 
+def _name_key(name: str) -> str:
+    """Case/spacing-insensitive identity so 'Shree  Cement' == 'shree cement'."""
+    return " ".join(name.lower().split())
+
+
+def _clean_gstin(value: Optional[str]) -> Optional[str]:
+    if not value or not value.strip():
+        return None
+    g = value.strip().upper()
+    if not GSTIN_RE.match(g):
+        raise HTTPException(422, "GSTIN must be 15 characters in the standard format, e.g. 21ABCDE1234F1Z5")
+    return g
+
+
 @router.get("/vendors")
-async def list_vendors(ctx: AuthCtx = Depends(get_ctx)):
-    vendors = await col_vendors.find(
-        {"org_id": ctx.org_id, "is_active": True, "deleted_at": None},
-    ).sort("name", 1).to_list(500)
+async def list_vendors(include_inactive: bool = False, ctx: AuthCtx = Depends(get_ctx)):
+    q: dict = {"org_id": ctx.org_id, "deleted_at": None}
+    if not include_inactive:
+        q["is_active"] = True
+    vendors = await col_vendors.find(q).sort("name", 1).to_list(1000)
     for v in vendors:
         v["id"] = v.pop("_id")
     return [_clean(v) for v in vendors]
@@ -648,21 +982,50 @@ async def create_vendor(dto: VendorIn, ctx: AuthCtx = Depends(get_ctx)):
     vid = _uid()
     doc = {
         "_id": vid, "org_id": ctx.org_id, **dto.model_dump(),
+        "name": dto.name.strip(), "name_key": _name_key(dto.name),
+        "gstin": _clean_gstin(dto.gstin),
         "is_active": True, "created_at": _now(), "deleted_at": None,
     }
-    await col_vendors.insert_one(doc)
+    try:
+        await col_vendors.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(400, f"A vendor named '{doc['name']}' already exists")
     await log_audit(ctx, "vendor.created", "vendor", vid)
     doc["id"] = doc.pop("_id")
     return _clean(doc)
 
 
+@router.patch("/vendors/{vendor_id}", dependencies=[Depends(require_role("OWNER", "ACCOUNTANT", "PM"))])
+async def update_vendor(vendor_id: str, dto: VendorPatch, ctx: AuthCtx = Depends(get_ctx)):
+    v = await col_vendors.find_one({"_id": vendor_id, "org_id": ctx.org_id, "deleted_at": None})
+    if not v:
+        raise HTTPException(404, "Vendor not found")
+    changes = dto.model_dump(exclude_unset=True)
+    if "gstin" in changes:
+        changes["gstin"] = _clean_gstin(changes["gstin"])
+    if "name" in changes and changes["name"]:
+        changes["name"] = changes["name"].strip()
+        changes["name_key"] = _name_key(changes["name"])
+    if changes:
+        changes["updated_at"] = _now()
+        try:
+            await col_vendors.update_one({"_id": vendor_id, "org_id": ctx.org_id}, {"$set": changes})
+        except DuplicateKeyError:
+            raise HTTPException(400, f"A vendor named '{changes.get('name')}' already exists")
+        await log_audit(ctx, "vendor.updated", "vendor", vendor_id, {k: v for k, v in changes.items() if k != "updated_at"})
+        v.update(changes)
+    v["id"] = v.pop("_id")
+    return _clean(v)
+
+
 # ── Materials ────────────────────────────────────────────────────────────────
 
 @router.get("/materials")
-async def list_materials(ctx: AuthCtx = Depends(get_ctx)):
-    mats = await col_materials.find(
-        {"org_id": ctx.org_id, "is_active": True, "deleted_at": None},
-    ).sort("name", 1).to_list(500)
+async def list_materials(include_inactive: bool = False, ctx: AuthCtx = Depends(get_ctx)):
+    q: dict = {"org_id": ctx.org_id, "deleted_at": None}
+    if not include_inactive:
+        q["is_active"] = True
+    mats = await col_materials.find(q).sort("name", 1).to_list(2000)
     for m in mats:
         m["id"] = m.pop("_id")
     return [_clean(m) for m in mats]
@@ -673,16 +1036,31 @@ async def create_material(dto: MaterialIn, ctx: AuthCtx = Depends(get_ctx)):
     mid = _uid()
     doc = {
         "_id": mid, "org_id": ctx.org_id, **dto.model_dump(),
-        "sku": dto.sku.upper(), "is_active": True,
+        "sku": dto.sku.strip().upper(), "is_active": True,
         "created_at": _now(), "deleted_at": None,
     }
     try:
         await col_materials.insert_one(doc)
-    except Exception:
-        raise HTTPException(400, "SKU already exists in org")
+    except DuplicateKeyError:
+        raise HTTPException(400, f"SKU {doc['sku']} already exists")
     await log_audit(ctx, "material.created", "material", mid)
     doc["id"] = doc.pop("_id")
     return _clean(doc)
+
+
+@router.patch("/materials/{material_id}", dependencies=[Depends(require_role("OWNER", "ACCOUNTANT", "PM", "STOREKEEPER"))])
+async def update_material(material_id: str, dto: MaterialPatch, ctx: AuthCtx = Depends(get_ctx)):
+    m = await col_materials.find_one({"_id": material_id, "org_id": ctx.org_id, "deleted_at": None})
+    if not m:
+        raise HTTPException(404, "Material not found")
+    changes = dto.model_dump(exclude_unset=True)
+    if changes:
+        changes["updated_at"] = _now()
+        await col_materials.update_one({"_id": material_id, "org_id": ctx.org_id}, {"$set": changes})
+        await log_audit(ctx, "material.updated", "material", material_id, {k: v for k, v in changes.items() if k != "updated_at"})
+        m.update(changes)
+    m["id"] = m.pop("_id")
+    return _clean(m)
 
 
 # ── DPR (sacred — CTO Rule 4) ────────────────────────────────────────────────
@@ -709,6 +1087,9 @@ async def create_dpr(dto: DprIn, request: Request, ctx: AuthCtx = Depends(get_ct
         })
         if not project:
             raise HTTPException(404, "Project not found")
+        assert_project_open(project)
+        _assert_not_future(_valid_date(dto.report_date), "Report date")
+        await require_uploads(ctx, dto.photo_keys, "photo")
 
         # Unique per (project, date, user)
         dup = await col_dprs.find_one({
@@ -789,6 +1170,9 @@ async def create_expense(dto: ExpenseIn, request: Request, ctx: AuthCtx = Depend
         })
         if not project:
             raise HTTPException(404, "Project not found")
+        assert_project_open(project)
+        _assert_not_future(_valid_date(dto.occurred_on), "Expense date")
+        await require_uploads(ctx, [dto.bill_photo_key], "bill photo")
 
         eid = _uid()
         doc = {
@@ -839,38 +1223,140 @@ async def submit_expense(expense_id: str, request: Request, ctx: AuthCtx = Depen
 
 # ── Approvals ────────────────────────────────────────────────────────────────
 
+def _labour_total(counts: Any) -> int:
+    """Total headcount from a DPR's labour_counts, tolerant of shape ({trade: {skill: n}} or {trade: n})."""
+    total = 0
+    if isinstance(counts, dict):
+        for v in counts.values():
+            if isinstance(v, dict):
+                total += sum(int(x or 0) for x in v.values() if isinstance(x, (int, float)))
+            elif isinstance(v, (int, float)):
+                total += int(v)
+    return total
+
+
+def _summ_expense(e: dict) -> dict:
+    return {
+        "kind": "EXPENSE", "title": e.get("purpose"), "category": e.get("category"),
+        "vendor_name": e.get("vendor_name"), "bill_photo_key": e.get("bill_photo_key"),
+        "occurred_on": e.get("occurred_on"),
+    }
+
+
+def _summ_dpr(d: dict) -> dict:
+    return {
+        "kind": "DPR", "title": (d.get("work_narrative") or "")[:140],
+        "report_date": d.get("report_date"), "photo_keys": d.get("photo_keys", []),
+        "weather": d.get("weather"), "blockers": d.get("blockers"),
+        "labour_total": _labour_total(d.get("labour_counts")),
+    }
+
+
+register_target("EXPENSE", col_expenses, _summ_expense)
+register_target("DPR", col_dprs, _summ_dpr)
+
+
+def _decision_gate(a: dict, ctx: AuthCtx) -> Optional[tuple[int, str]]:
+    """Why `ctx` may NOT decide approval `a` — (http_status, message) — or None if allowed."""
+    if a["status"] != "PENDING":
+        return 400, f"Already {a['status']}"
+    if a["requested_by_id"] == ctx.user_id:
+        return 403, "Maker cannot approve own request"
+    if a["required_role"] != ctx.role and ctx.role != "OWNER":
+        return 403, f"Role {ctx.role} cannot decide; need {a['required_role']}"
+    return None
+
+
+async def _enrich_approvals(ctx: AuthCtx, approvals: list[dict]) -> list[dict]:
+    """
+    Attach what an approver actually needs to see: the project, the record being
+    approved (purpose / narrative / bill photo …), who raised it, and whether the
+    caller is allowed to decide it. Batched, so the cost is a handful of queries
+    regardless of how many approvals are listed.
+    """
+    ids_by_type: dict[str, list[str]] = {}
+    for a in approvals:
+        ids_by_type.setdefault(a["target_type"], []).append(a["target_id"])
+
+    targets: dict[tuple[str, str], dict] = {}
+    for ttype, ids in ids_by_type.items():
+        spec = TARGETS.get(ttype)
+        if spec:
+            async for doc in spec.collection.find({"_id": {"$in": ids}, "org_id": ctx.org_id}):
+                targets[(ttype, doc["_id"])] = doc
+
+    project_ids = list({d["project_id"] for d in targets.values() if d.get("project_id")})
+    projects = {
+        p["_id"]: p async for p in col_projects.find(
+            {"_id": {"$in": project_ids}, "org_id": ctx.org_id}, {"code": 1, "name": 1},
+        )
+    }
+    user_ids = list({a["requested_by_id"] for a in approvals} | {a["approver_id"] for a in approvals if a.get("approver_id")})
+    users = {u["_id"]: u.get("full_name") async for u in col_users.find({"_id": {"$in": user_ids}}, {"full_name": 1})}
+
+    out = []
+    for a in approvals:
+        row = dict(a)
+        row["id"] = row.pop("_id")
+        spec = TARGETS.get(a["target_type"])
+        doc = targets.get((a["target_type"], a["target_id"]))
+        target = spec.summarize(doc) if (spec and doc) else {"kind": a["target_type"], "title": None}
+        if doc:
+            proj = projects.get(doc.get("project_id"))
+            target["project_id"] = doc.get("project_id")
+            target["project_code"] = proj["code"] if proj else None
+            target["project_name"] = proj["name"] if proj else None
+        row["target"] = target
+        row["requested_by_name"] = users.get(a["requested_by_id"])
+        row["approver_name"] = users.get(a.get("approver_id")) if a.get("approver_id") else None
+        blocked = _decision_gate(a, ctx)
+        row["can_decide"] = blocked is None
+        row["blocked_reason"] = blocked[1] if blocked else None
+        out.append(row)
+    return out
+
+
 @router.get("/approvals/pending")
-async def list_pending(ctx: AuthCtx = Depends(get_ctx)):
+async def list_pending(mine: bool = False, ctx: AuthCtx = Depends(get_ctx)):
+    """Open approvals, oldest first. `mine=true` keeps only those the caller may decide."""
     await _escalation_sweep(ctx.org_id)
     aps = await col_approvals.find({
         "org_id": ctx.org_id, "status": "PENDING",
     }).sort("created_at", 1).to_list(500)
-    for a in aps:
-        a["id"] = a.pop("_id")
-    return [_clean(a) for a in aps]
+    rows = await _enrich_approvals(ctx, aps)
+    return [r for r in rows if r["can_decide"]] if mine else rows
+
+
+@router.get("/approvals/history")
+async def approval_history(
+    limit: int = 50, skip: int = 0, status: Optional[str] = None, include_auto: bool = False,
+    ctx: AuthCtx = Depends(get_ctx),
+):
+    """Decided approvals, newest first (auto-approved petty cash is hidden unless asked for)."""
+    q: dict = {"org_id": ctx.org_id, "status": {"$ne": "PENDING"}}
+    if status:
+        q["status"] = status.upper()
+    if not include_auto:
+        q["auto"] = {"$ne": True}
+    aps = await col_approvals.find(q).sort("decided_at", -1).skip(max(skip, 0)).limit(min(max(limit, 1), 200)).to_list(200)
+    return await _enrich_approvals(ctx, aps)
 
 
 @router.post("/approvals/{approval_id}/decide")
 async def decide_approval(approval_id: str, dto: DecideIn, ctx: AuthCtx = Depends(get_ctx)):
     a = await col_approvals.find_one({"_id": approval_id, "org_id": ctx.org_id})
     if not a:
-        raise HTTPException(404)
-    if a["status"] != "PENDING":
-        raise HTTPException(400, f"Already {a['status']}")
+        raise HTTPException(404, "Approval not found")
 
-    # Maker ≠ Checker
-    if a["requested_by_id"] == ctx.user_id:
-        raise HTTPException(403, "Maker cannot approve own request")
-
-    # Role gate (OWNER can always decide)
-    if a["required_role"] != ctx.role and ctx.role != "OWNER":
-        raise HTTPException(403, f"Role {ctx.role} cannot decide; need {a['required_role']}")
+    blocked = _decision_gate(a, ctx)
+    if blocked:
+        raise HTTPException(*blocked)
 
     # Rejection requires reason
-    if dto.action == "REJECT" and not dto.rejection_reason:
+    if dto.action == "REJECT" and not (dto.rejection_reason or "").strip():
         raise HTTPException(400, "Rejection reason required")
 
-    # PIN for ≥ ₹50,000 on APPROVE
+    # PIN for ≥ ₹50,000 on APPROVE — with brute-force throttling (4 digits is only 10,000 guesses)
     pin_verified = False
     if dto.action == "APPROVE" and (a.get("amount_cents") or 0) >= PIN_THRESHOLD_CENTS:
         if not dto.pin:
@@ -878,66 +1364,70 @@ async def decide_approval(approval_id: str, dto: DecideIn, ctx: AuthCtx = Depend
         user = await col_users.find_one({"_id": ctx.user_id})
         if not user or not user.get("pin_hash"):
             raise HTTPException(400, "PIN not set; go to Settings → Set PIN")
+        now = _now()
+        pin_locked_until = _aware(user.get("pin_locked_until"))
+        if pin_locked_until and pin_locked_until > now:
+            raise HTTPException(429, "Too many wrong PINs. Approvals needing a PIN are locked for a few minutes.")
+        pin_failed = 0 if pin_locked_until else user.get("pin_failed", 0)   # lock lapsed → fresh count
         if not _verify_password(dto.pin, user["pin_hash"]):
+            pin_failed += 1
+            update = {"pin_failed": pin_failed, "pin_locked_until": None}
+            if pin_failed >= 5:
+                update["pin_locked_until"] = now + timedelta(minutes=15)
+            await col_users.update_one({"_id": ctx.user_id}, {"$set": update})
             raise HTTPException(403, "Invalid PIN")
+        if user.get("pin_failed") or pin_locked_until:
+            await col_users.update_one({"_id": ctx.user_id}, {"$set": {"pin_failed": 0, "pin_locked_until": None}})
         pin_verified = True
 
     new_status = "APPROVED" if dto.action == "APPROVE" else "REJECTED"
-    await col_approvals.update_one({"_id": approval_id}, {"$set": {
-        "status": new_status, "approver_id": ctx.user_id, "decided_at": _now(),
-        "comment": dto.comment, "rejection_reason": dto.rejection_reason,
-    }})
+    # Atomic claim: if two approvers click at once only one update matches PENDING.
+    claimed = await col_approvals.update_one(
+        {"_id": approval_id, "org_id": ctx.org_id, "status": "PENDING"},
+        {"$set": {
+            "status": new_status, "approver_id": ctx.user_id, "decided_at": _now(),
+            "comment": dto.comment, "rejection_reason": (dto.rejection_reason or "").strip() or None,
+        }},
+    )
+    if claimed.modified_count != 1:
+        raise HTTPException(400, "This request was just decided by someone else")
+
     await col_approval_events.insert_one({
         "_id": _uid(), "approval_id": approval_id,
         "action": new_status, "actor_id": ctx.user_id, "actor_role": ctx.role,
-        "pin_verified": pin_verified, "comment": dto.comment,
+        "pin_verified": pin_verified, "comment": dto.comment or (dto.rejection_reason or None),
         "created_at": _now(),
     })
 
-    # Propagate to target
-    coll_map = {"EXPENSE": col_expenses, "DPR": col_dprs, "MATERIAL_RECEIPT": None}
-    coll = coll_map.get(a["target_type"])
-    if coll is not None:
-        await coll.update_one(
-            {"_id": a["target_id"]}, {"$set": {"approval_status": new_status}},
+    # Propagate to the record that was approved
+    spec = TARGETS.get(a["target_type"])
+    if spec:
+        await spec.collection.update_one(
+            {"_id": a["target_id"], "org_id": ctx.org_id}, {"$set": {"approval_status": new_status}},
         )
+        if spec.on_decided:
+            await spec.on_decided(a, new_status)
 
     await log_audit(ctx, f"approval.{new_status.lower()}", "approval", approval_id)
-
     return {"id": approval_id, "status": new_status}
 
 
-# ── Uploads (stub — same shape as /app/erp/apps/api) ─────────────────────────
-
-@router.post("/uploads/presign")
-async def presign_upload(
-    body: dict,
-    ctx: AuthCtx = Depends(get_ctx),
-):
-    """
-    MVP stub: returns an object_key we use as a reference. Real S3 signing is
-    wired in Phase 1.5 — until then the UI stores the key and shows a
-    thumbnail placeholder. See /app/erp/apps/api/src/modules/uploads/ for the
-    production signing pattern.
-    """
-    kind = body.get("kind", "generic")
-    content_type = body.get("content_type", "image/jpeg")
-    size_bytes = int(body.get("size_bytes", 0))
-    if size_bytes > 10 * 1024 * 1024:
-        raise HTTPException(400, "File too large (max 10 MB)")
-    object_key = f"{ctx.org_id}/{kind}/{_uid()}"
-    return {
-        "object_key": object_key,
-        "url": f"/api/erp/uploads/stub/{object_key}",  # no-op PUT target
-        "method": "PUT",
-        "headers": {"Content-Type": content_type},
-    }
-
-
-@router.put("/uploads/stub/{rest:path}")
-async def upload_stub(rest: str):
-    """Accepts the file and discards it. Real S3 replaces this."""
-    return {"ok": True, "key": rest}
+@router.get("/approvals/{approval_id}")
+async def get_approval(approval_id: str, ctx: AuthCtx = Depends(get_ctx)):
+    """One approval with its full event timeline (requested / escalated / decided …)."""
+    a = await col_approvals.find_one({"_id": approval_id, "org_id": ctx.org_id})
+    if not a:
+        raise HTTPException(404, "Approval not found")
+    row = (await _enrich_approvals(ctx, [a]))[0]
+    events = await col_approval_events.find({"approval_id": approval_id}).sort("created_at", 1).to_list(200)
+    actor_ids = [e["actor_id"] for e in events if e.get("actor_id") and e["actor_id"] != "system"]
+    names = {u["_id"]: u.get("full_name") async for u in col_users.find({"_id": {"$in": actor_ids}}, {"full_name": 1})}
+    row["events"] = [{
+        "action": e["action"], "actor_role": e.get("actor_role"), "comment": e.get("comment"),
+        "actor_name": "System" if e.get("actor_id") == "system" else names.get(e.get("actor_id")),
+        "pin_verified": e.get("pin_verified", False), "created_at": e["created_at"],
+    } for e in events]
+    return row
 
 
 # ── Inline uploads (base64 stored in Mongo; Phase 1.5 will move to S3) ───────
@@ -1034,37 +1524,122 @@ async def get_inline_upload(object_key: str, ctx: AuthCtx = Depends(get_ctx)):
 
 @router.get("/overview")
 async def overview(ctx: AuthCtx = Depends(get_ctx)):
+    await _escalation_sweep(ctx.org_id)
+    today = _today_ist()                       # India's calendar day, not the server's
+    month_start = today.replace(day=1)
+    next_month = (month_start + timedelta(days=32)).replace(day=1)
+
     active_projects = await col_projects.count_documents({
         "org_id": ctx.org_id, "status": "ACTIVE", "deleted_at": None,
     })
-    pending_approvals = await col_approvals.count_documents({
-        "org_id": ctx.org_id, "status": "PENDING",
-    })
-    pending_amount_cursor = col_approvals.find({
-        "org_id": ctx.org_id, "status": "PENDING",
-    }, {"amount_cents": 1})
-    pending_amount = 0
-    async for a in pending_amount_cursor:
-        pending_amount += a.get("amount_cents") or 0
 
-    today = date.today().isoformat()
+    pending = await col_approvals.find(
+        {"org_id": ctx.org_id, "status": "PENDING"},
+        {"amount_cents": 1, "requested_by_id": 1, "required_role": 1, "status": 1},
+    ).to_list(1000)
+    pending_amount = sum(a.get("amount_cents") or 0 for a in pending)
+    awaiting_me = sum(1 for a in pending if _decision_gate(a, ctx) is None)
+
     dprs_today = await col_dprs.count_documents({
-        "org_id": ctx.org_id, "report_date": today, "deleted_at": None,
+        "org_id": ctx.org_id, "report_date": today.isoformat(), "deleted_at": None,
     })
 
-    month_prefix = today[:7]
-    month_exps = col_expenses.find({
-        "org_id": ctx.org_id, "deleted_at": None,
-        "occurred_on": {"$regex": f"^{month_prefix}"},
-    }, {"amount_cents": 1})
-    month_spend = 0
-    async for e in month_exps:
-        month_spend += e.get("amount_cents") or 0
+    # Only money that has actually been approved counts as spend. Draft, pending and
+    # rejected expenses are reported separately (a rejected bill was never spent).
+    by_status = {
+        r["_id"]: r["total"] for r in await col_expenses.aggregate([
+            {"$match": {
+                "org_id": ctx.org_id, "deleted_at": None,
+                "occurred_on": {"$gte": month_start.isoformat(), "$lt": next_month.isoformat()},
+            }},
+            {"$group": {"_id": "$approval_status", "total": {"$sum": "$amount_cents"}}},
+        ]).to_list(20)
+    }
 
     return {
+        "today": today.isoformat(),
         "active_projects": active_projects,
-        "pending_approvals": pending_approvals,
+        "pending_approvals": len(pending),
+        "awaiting_my_decision": awaiting_me,
         "pending_amount_cents": pending_amount,
         "dprs_today": dprs_today,
-        "month_spend_cents": month_spend,
+        "month_spend_cents": by_status.get("APPROVED", 0),
+        "month_spend_pending_cents": by_status.get("PENDING", 0),
     }
+
+
+# ── Indexes ──────────────────────────────────────────────────────────────────
+# Before this existed, no index was ever created, so every "already exists" guard
+# in this file was dead code. Modules register their indexes here at import time;
+# `ensure_indexes` runs once at application startup.
+
+_INDEX_REGISTRY: list[tuple[Any, list, dict]] = []
+
+
+def register_indexes(collection, keys: list, **opts) -> None:
+    _INDEX_REGISTRY.append((collection, keys, opts))
+
+
+IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 3600
+
+register_indexes(col_users, [("email", 1)], unique=True, name="uq_email")
+register_indexes(col_memberships, [("org_id", 1), ("user_id", 1)], unique=True, name="uq_org_user")
+register_indexes(col_memberships, [("user_id", 1)], name="ix_user")
+register_indexes(col_projects, [("org_id", 1), ("code", 1)], unique=True, name="uq_org_code")
+register_indexes(col_projects, [("org_id", 1), ("status", 1)], name="ix_org_status")
+register_indexes(col_vendors, [("org_id", 1), ("name_key", 1)], unique=True, name="uq_org_name_key")
+register_indexes(col_materials, [("org_id", 1), ("sku", 1)], unique=True, name="uq_org_sku")
+register_indexes(col_dprs, [("org_id", 1), ("project_id", 1), ("report_date", -1)], name="ix_org_project_date")
+register_indexes(
+    col_dprs, [("org_id", 1), ("project_id", 1), ("report_date", 1), ("captured_by_id", 1)],
+    unique=True, name="uq_dpr_project_date_user",
+)
+register_indexes(col_expenses, [("org_id", 1), ("project_id", 1), ("occurred_on", -1)], name="ix_org_project_date")
+register_indexes(col_expenses, [("org_id", 1), ("occurred_on", 1)], name="ix_org_date")
+register_indexes(col_approvals, [("org_id", 1), ("status", 1), ("created_at", 1)], name="ix_org_status_created")
+register_indexes(col_approvals, [("org_id", 1), ("target_type", 1), ("target_id", 1)], name="ix_org_target")
+register_indexes(col_approval_events, [("approval_id", 1), ("created_at", 1)], name="ix_approval")
+register_indexes(col_audit_log, [("org_id", 1), ("created_at", -1)], name="ix_org_created")
+register_indexes(col_uploads, [("org_id", 1)], name="ix_org")
+register_indexes(col_idempotency, [("org_id", 1), ("key", 1)], unique=True, name="uq_org_key")
+register_indexes(col_idempotency, [("created_at", 1)], expireAfterSeconds=IDEMPOTENCY_TTL_SECONDS, name="ttl_created")
+
+
+async def _backfill_vendor_keys() -> None:
+    """Vendors created before name_key existed get one, so the unique index can be built."""
+    async for v in col_vendors.find({"name_key": {"$exists": False}}, {"name": 1}):
+        await col_vendors.update_one({"_id": v["_id"]}, {"$set": {"name_key": _name_key(v.get("name") or "")}})
+
+
+async def ensure_indexes() -> None:
+    """
+    Create every registered index. Never raises: a failure to build a UNIQUE index
+    (typically because production already holds duplicates from the unguarded
+    era) is logged at ERROR, a plain index is created in its place so queries stay
+    fast, and the app still boots. Fix the duplicates and restart to enforce uniqueness.
+    """
+    try:
+        await _backfill_vendor_keys()
+    except PyMongoError:
+        logger.exception("ERP: vendor name_key backfill failed")
+    for collection, keys, opts in _INDEX_REGISTRY:
+        try:
+            await collection.create_index(keys, **opts)
+        except PyMongoError as exc:
+            if opts.get("unique"):
+                logger.error(
+                    "ERP: could not build UNIQUE index %s on %s — existing duplicate data? (%s). "
+                    "Falling back to a non-unique index; uniqueness is NOT enforced until this is fixed.",
+                    opts.get("name"), collection.name, exc,
+                )
+                fallback = {k: v for k, v in opts.items() if k != "unique"}
+                fallback["name"] = f"{opts.get('name', 'ix')}_nonunique"
+                try:
+                    await collection.create_index(keys, **fallback)
+                except PyMongoError:
+                    logger.exception("ERP: fallback index also failed on %s", collection.name)
+            else:
+                logger.exception("ERP: could not build index %s on %s", opts.get("name"), collection.name)
+
+
+router.add_event_handler("startup", ensure_indexes)
