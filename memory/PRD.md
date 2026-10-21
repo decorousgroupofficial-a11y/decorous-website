@@ -72,6 +72,9 @@ Approval engine now has a **target registry** (`register_target`): any module pl
 supplies how to summarise a record for the approver, and may react when it is decided.
 Routing: EXPENSE & WORKER_PAYMENT ≤₹5k auto / ≤₹25k PM / Owner · MATERIAL_RECEIPT, DPR, ATTENDANCE → PM ·
 VENDOR_BILL & PAYMENT ≤₹50k PM / Owner · any approval ≥₹50k needs the approver's PIN (5 wrong → 15-min lock).
+**Owner-entered payments (vendor payments and worker wage/advance payments) need no approval** and take effect
+immediately (`OWNER_DIRECT_TYPES` in `erp_routes.py`); they are still logged in Approvals → History as self-approved.
+Owner-entered expenses, bills, receipts and attendance still go through maker-checker.
 
 **Project cost model** (no double counting): approved expenses + approved wages + approved vendor bills +
 approved goods receipts *not yet claimed by a bill*. Payments are cash movements, not cost.

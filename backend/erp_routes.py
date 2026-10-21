@@ -477,6 +477,9 @@ class SetPinIn(BaseModel):
 
 # ── Approval engine ──────────────────────────────────────────────────────────
 
+# Payment records that take effect immediately when the Owner enters them.
+OWNER_DIRECT_TYPES = {"PAYMENT", "WORKER_PAYMENT"}
+
 PIN_THRESHOLD_CENTS = 5_000_000  # ₹50,000
 SLA_HOURS = {"PM": 24, "OWNER": 48, "ACCOUNTANT": 24}
 
@@ -532,8 +535,12 @@ async def _request_approval(
     amount_cents: Optional[int],
 ) -> dict:
     required = _required_role(target_type, amount_cents)
+    # Business rule: a payment the Owner records themselves needs no approval - there is
+    # nobody above the Owner to approve it. It is still written to the approval log
+    # (flagged self_approved) so it shows up in History and the audit trail.
+    owner_direct = ctx.role == "OWNER" and target_type in OWNER_DIRECT_TYPES
 
-    if required == "AUTO":
+    if required == "AUTO" or owner_direct:
         approval = {
             "_id": _uid(),
             "org_id": ctx.org_id,
@@ -542,8 +549,9 @@ async def _request_approval(
             "amount_cents": amount_cents,
             "currency": "INR",
             "status": "APPROVED",
-            "auto": True,
-            "required_role": "ENGINEER",
+            "auto": not owner_direct,
+            "self_approved": owner_direct,
+            "required_role": "OWNER" if owner_direct else "ENGINEER",
             "requested_by_id": ctx.user_id,
             "approver_id": ctx.user_id,
             "decided_at": _now(),
@@ -558,7 +566,7 @@ async def _request_approval(
         await col_approval_events.insert_one({
             "_id": _uid(),
             "approval_id": approval["_id"],
-            "action": "AUTO_APPROVED",
+            "action": "OWNER_ENTRY" if owner_direct else "AUTO_APPROVED",
             "actor_id": ctx.user_id,
             "actor_role": ctx.role,
             "pin_verified": False,

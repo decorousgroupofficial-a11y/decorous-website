@@ -258,3 +258,40 @@ def test_finance_is_tenant_isolated(org, client):
     assert other.get(f"/api/erp/vendors/{v['id']}/statement").status_code == 404
     assert other.get("/api/erp/vendors/balances").json()["vendors"] == []
     assert other.post("/api/erp/vendor-payments", {"vendor_id": v["id"], "amount_cents": 1000, "paid_on": TODAY}).status_code == 404
+
+
+# ── Owner-entered payments need no approval ──────────────────────────────────
+
+def test_owner_vendor_payment_takes_effect_immediately_even_above_50k(org):
+    owner, pm, acc, p, v = org
+    approved_bill(owner, pm, acc, v["id"], p["id"], no="OWN-1", amount=4_500_000)       # two ₹45,000 bills (PM-approvable)
+    approved_bill(owner, pm, acc, v["id"], p["id"], no="OWN-2", amount=4_500_000)       # = ₹90,000 owed
+    r = pay(owner, v["id"], 6_000_000)                                                    # ₹60,000, no PIN set at all
+    assert r.status_code == 200 and r.json()["approval_status"] == "APPROVED"
+    assert owner.get("/api/erp/approvals/pending").json() == []                           # nothing waiting for anyone
+    row = owner.get("/api/erp/vendors/balances").json()["vendors"][0]
+    assert (row["paid_cents"], row["outstanding_cents"], row["pending_payments_cents"]) == (6_000_000, 3_000_000, 0)
+    hist = owner.get("/api/erp/approvals/history").json()
+    assert hist[0]["target_type"] == "PAYMENT" and hist[0]["self_approved"] is True       # still auditable
+    assert hist[0]["requested_by_id"] == hist[0]["approver_id"] == owner.user_id
+
+
+def test_other_roles_vendor_payments_still_need_approval(org):
+    owner, pm, acc, p, v = org
+    for who in (pm, acc):
+        r = pay(who, v["id"], 100_000)
+        assert r.status_code == 200 and r.json()["approval_status"] == "PENDING"
+    assert len(owner.get("/api/erp/approvals/pending").json()) == 2
+
+
+def test_owner_worker_payment_is_immediate_but_owner_expense_still_needs_approval(client):
+    from .test_labour import worker
+    from .test_core_existing import make_expense, submit
+    owner = signup(client)
+    p = owner.project()
+    w = worker(owner)
+    r = owner.post("/api/erp/worker-payments", {"worker_id": w["id"], "amount_cents": 3_000_000, "paid_on": TODAY})
+    assert r.json()["approval_status"] == "APPROVED"                                      # ₹30,000: normally Owner-level
+    assert owner.get("/api/erp/workers").json()[0]["paid_cents"] == 3_000_000
+    e = make_expense(owner, p["id"], 30_000)
+    assert submit(owner, e["id"])["approval_status"] == "PENDING"                         # the rule is payments only

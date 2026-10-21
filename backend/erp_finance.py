@@ -6,7 +6,8 @@ Mounted under /api/erp/* (see erp_api.py).
   • Vendor bill     what a supplier/subcontractor invoiced us (gross, incl. GST). Maker-checker
                     (VENDOR_BILL: PM ≤ ₹50,000, Owner above; PIN ≥ ₹50,000). A bill can claim
                     approved goods receipts (GRNs) so the same goods are never costed twice.
-  • Vendor payment  money we paid a vendor. Maker-checker (PAYMENT), PIN ≥ ₹50,000.
+  • Vendor payment  money we paid a vendor. Maker-checker (PAYMENT), PIN ≥ ₹50,000 -- except
+                    payments entered by the Owner, which take effect immediately (self-approved).
   • Outstanding     DERIVED at read time: approved bills − approved payments. Payments are applied
                     to the oldest bill first (FIFO) to show which bills are still open.
 
@@ -202,9 +203,10 @@ async def create_vendor_payment(dto: VendorPaymentIn, request: Request, ctx: Aut
         }
         await col_vendor_payments.insert_one(doc)
         ap = await core._request_approval(ctx, "PAYMENT", pid, dto.amount_cents)
-        await col_vendor_payments.update_one({"_id": pid}, {"$set": {"approval_status": "PENDING", "approval_id": ap["_id"]}})
+        status = "APPROVED" if ap["status"] == "APPROVED" else "PENDING"      # Owner entries are effective at once
+        await col_vendor_payments.update_one({"_id": pid}, {"$set": {"approval_status": status, "approval_id": ap["_id"]}})
         await log_audit(ctx, "vendor_payment.created", "vendor_payment", pid, {"amount_cents": dto.amount_cents})
-        doc.update(approval_status="PENDING", approval_id=ap["_id"])
+        doc.update(approval_status=status, approval_id=ap["_id"])
         return _row(doc)
     return await enforce_idempotency(request, ctx, handler)
 

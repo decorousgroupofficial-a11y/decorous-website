@@ -178,6 +178,7 @@ function WorkerDialog({ worker, onClose, onSaved }) {
 }
 
 function PayDialog({ worker, onClose, onSaved }) {
+  const owner = useErpRole().can();                  // Owner-only: payments take effect at once
   const key = useRef(newKey());                      // one key per intent → safe to retry
   const [f, setF] = useState({ kind: "WAGE", amount: "", paid_on: todayIST(), mode: "CASH", ref_no: "", note: "" });
   const [proof, setProof] = useState([]);
@@ -223,7 +224,7 @@ function PayDialog({ worker, onClose, onSaved }) {
             <ErpField label="Reference (UTR)"><Input value={f.ref_no} onChange={(e) => set("ref_no", e.target.value)} /></ErpField>
           </div>
           <ErpField label="Proof photo (optional)"><ErpPhotoPicker kind="worker-payment" value={proof} onChange={setProof} max={1} label="Add proof" /></ErpField>
-          <p className="text-[11px] text-slate-400">Up to ₹5,000 is recorded straight away; larger amounts need approval (PIN from ₹50,000).</p>
+          <p className="text-[11px] text-slate-400">{owner ? "As the Owner, your payments are recorded immediately with no approval step." : "Up to ₹5,000 is recorded straight away; larger amounts need approval (PIN from ₹50,000)."}</p>
           <Button type="submit" className="w-full" disabled={busy} data-testid="erp-worker-pay-submit">{busy ? "Saving…" : "Record payment"}</Button>
         </form>
       </DialogContent>

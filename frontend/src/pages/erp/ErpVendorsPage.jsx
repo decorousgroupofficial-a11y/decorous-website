@@ -265,6 +265,7 @@ function BillDialog({ vendors, projects, vendor, onClose, onSaved }) {
 }
 
 function PaymentDialog({ vendor, projects, outstanding, onClose, onSaved }) {
+  const owner = useErpRole().can();                     // Owner-only: payments take effect at once
   const key = useRef(newKey());
   const [f, setF] = useState({ amount: "", paid_on: todayIST(), mode: "BANK", ref_no: "", note: "", project_id: "" });
   const [proof, setProof] = useState([]);
@@ -276,8 +277,8 @@ function PaymentDialog({ vendor, projects, outstanding, onClose, onSaved }) {
     if (!amount) return toast.error("Enter a valid amount");
     setBusy(true);
     try {
-      await erpApi.createVendorPayment({ vendor_id: vendor.id, project_id: f.project_id || null, amount_cents: amount, paid_on: f.paid_on, mode: f.mode, ref_no: f.ref_no || null, note: f.note || null, proof_photo_key: proof[0]?.key || null }, key.current);
-      toast.success("Payment sent for approval");
+      const r = await erpApi.createVendorPayment({ vendor_id: vendor.id, project_id: f.project_id || null, amount_cents: amount, paid_on: f.paid_on, mode: f.mode, ref_no: f.ref_no || null, note: f.note || null, proof_photo_key: proof[0]?.key || null }, key.current);
+      toast.success(r.approval_status === "APPROVED" ? "Payment recorded" : "Payment sent for approval");
       onSaved();
     } catch (err) { toast.error(apiError(err)); } finally { setBusy(false); }
   }
@@ -295,8 +296,8 @@ function PaymentDialog({ vendor, projects, outstanding, onClose, onSaved }) {
           </div>
           <ErpField label="Project (optional)"><ErpSelect value={f.project_id} onChange={(v) => set("project_id", v)}><option value="">—</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}</ErpSelect></ErpField>
           <ErpField label="Proof (optional)"><ErpPhotoPicker kind="vendor-payment" value={proof} onChange={setProof} max={1} label="Add proof" /></ErpField>
-          <p className="text-[11px] text-slate-400">Payments need approval: a PM up to ₹50,000, the Owner above that (with PIN).</p>
-          <Button type="submit" className="w-full" disabled={busy} data-testid="erp-vendor-pay-submit">{busy ? "Submitting…" : "Submit for approval"}</Button>
+          <p className="text-[11px] text-slate-400">{owner ? "As the Owner, your payments are recorded immediately with no approval step." : "Payments need approval: a PM up to ₹50,000, the Owner above that (with PIN)."}</p>
+          <Button type="submit" className="w-full" disabled={busy} data-testid="erp-vendor-pay-submit">{busy ? "Saving…" : owner ? "Record payment" : "Submit for approval"}</Button>
         </form>
       </DialogContent>
     </Dialog>
